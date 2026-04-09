@@ -329,7 +329,8 @@ textarea {
   margin-top: 16px;
 }
 
-.online-panel {
+.online-panel,
+.start-extra {
   margin-top: 14px;
 }
 
