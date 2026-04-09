@@ -49,7 +49,6 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  min-height: 0;
 }
 
 .topbar h1,
@@ -220,6 +219,11 @@ textarea {
   margin: 8px 0 0;
 }
 
+.subtitle {
+  color: var(--muted);
+  margin: 8px 0 0;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -277,6 +281,11 @@ textarea {
   display: flex;
   justify-content: flex-end;
   margin-top: 16px;
+  gap: 10px;
+}
+
+.modal-actions.center {
+  justify-content: center;
 }
 
 .online-panel,
@@ -286,6 +295,80 @@ textarea {
 
 .mt8 {
   margin-top: 8px;
+}
+
+.end-modal {
+  text-align: center;
+  width: min(760px, 94vw);
+}
+
+.end-animation {
+  position: relative;
+  height: 220px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(30,41,59,0.9), rgba(15,23,42,0.95));
+  border: 1px solid var(--line);
+}
+
+.anim-victory,
+.anim-defeat {
+  position: absolute;
+  inset: 0;
+}
+
+.trophy,
+.wreck {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 84px;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.confetti {
+  position: absolute;
+  width: 16px;
+  height: 28px;
+  border-radius: 4px;
+  animation: fall 2.8s linear infinite;
+}
+
+.confetti-1 { left: 8%; top: -20px; background: #f59e0b; animation-delay: 0s; }
+.confetti-2 { left: 22%; top: -10px; background: #ef4444; animation-delay: 0.3s; }
+.confetti-3 { left: 39%; top: -30px; background: #10b981; animation-delay: 0.6s; }
+.confetti-4 { left: 61%; top: -20px; background: #3b82f6; animation-delay: 0.9s; }
+.confetti-5 { left: 76%; top: -25px; background: #a855f7; animation-delay: 1.2s; }
+.confetti-6 { left: 90%; top: -15px; background: #f43f5e; animation-delay: 1.5s; }
+
+.wave {
+  position: absolute;
+  left: -10%;
+  width: 120%;
+  height: 80px;
+  border-radius: 50%;
+  background: rgba(59,130,246,0.25);
+  animation: drift 3.2s ease-in-out infinite;
+}
+
+.wave-1 { bottom: 20px; }
+.wave-2 { bottom: -10px; animation-delay: 0.8s; background: rgba(14,165,233,0.22); }
+
+@keyframes fall {
+  0% { transform: translateY(-40px) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(260px) rotate(320deg); opacity: 0.9; }
+}
+
+@keyframes pulse {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-50%, -50%) scale(1.12); }
+}
+
+@keyframes drift {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(-30px); }
 }
 
 @media (max-width: 980px) {
