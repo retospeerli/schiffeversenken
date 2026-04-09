@@ -6,6 +6,8 @@
 
   const MORSE_LONG_PRESS_MS = 260;
   const MORSE_LETTER_GAP_MS = 700;
+  const SHOT_DELAY_MS = 300;
+  const MORSE_BEEP_FREQ = 650;
 
   const NATO_MAP = {
     alfa: "A", alpha: "A",
@@ -77,10 +79,6 @@
 
     btnNewGame: document.getElementById("btnNewGame"),
 
-    statusText: document.getElementById("statusText"),
-    turnText: document.getElementById("turnText"),
-    lastInputText: document.getElementById("lastInputText"),
-
     playerBoardGrid: document.getElementById("playerBoardGrid"),
     enemyBoardGrid: document.getElementById("enemyBoardGrid"),
 
@@ -134,6 +132,10 @@
   let morseRightMouseDown = false;
   let morseLetterTimer = null;
 
+  let audioCtx = null;
+  let morseOscillator = null;
+  let morseGain = null;
+
   let rtc = {
     pc: null,
     dc: null,
@@ -143,13 +145,71 @@
 
   let pendingStartMorseTrigger = { type: "keyboard", key: " " };
 
+  function ensureAudioContext() {
+    if (!audioCtx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) {
+        audioCtx = new Ctx();
+      }
+    }
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume().catch(() => {});
+    }
+  }
+
+  function startMorseTone() {
+    ensureAudioContext();
+    if (!audioCtx || morseOscillator) return;
+
+    morseOscillator = audioCtx.createOscillator();
+    morseGain = audioCtx.createGain();
+
+    morseOscillator.type = "sine";
+    morseOscillator.frequency.value = MORSE_BEEP_FREQ;
+    morseGain.gain.value = 0.04;
+
+    morseOscillator.connect(morseGain);
+    morseGain.connect(audioCtx.destination);
+    morseOscillator.start();
+  }
+
+  function stopMorseTone() {
+    if (morseOscillator) {
+      try { morseOscillator.stop(); } catch (_) {}
+      try { morseOscillator.disconnect(); } catch (_) {}
+    }
+    if (morseGain) {
+      try { morseGain.disconnect(); } catch (_) {}
+    }
+    morseOscillator = null;
+    morseGain = null;
+  }
+
   function playSound(name) {
     const snd = sounds[name];
-    if (!snd) return;
+    if (!snd) return Promise.resolve();
     try {
       snd.currentTime = 0;
-      snd.play().catch(() => {});
+      const p = snd.play();
+      if (p && typeof p.then === "function") {
+        return p.catch(() => {});
+      }
     } catch (_) {}
+    return Promise.resolve();
+  }
+
+  function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async function playPreShotFeedback(valid) {
+    await playSound(valid ? "copy" : "error");
+    await wait(SHOT_DELAY_MS);
+  }
+
+  async function playFireThenResolve(playResultSoundFn) {
+    await playSound("fire");
+    await playResultSoundFn();
   }
 
   function createEmptyBoard() {
@@ -255,26 +315,12 @@
     morsePressStart = null;
     morsePointerId = null;
     morseRightMouseDown = false;
+    stopMorseTone();
 
     updateMorseDisplay();
     updateMorseKeyDisplay();
     updateInputPanels();
-    updateStatus("Neues Spiel gestartet.");
-    updateTurnInfo();
-    setLastInput("-");
     renderBoards();
-  }
-
-  function updateStatus(text) {
-    dom.statusText.textContent = text;
-  }
-
-  function setLastInput(text) {
-    dom.lastInputText.textContent = text;
-  }
-
-  function updateTurnInfo() {
-    dom.turnText.textContent = state.gameOver ? "-" : (state.myTurn ? "Du" : "Gegner");
   }
 
   function formatTrigger(trigger) {
@@ -366,8 +412,8 @@
 
   function renderBoard(target, board, revealShips) {
     target.innerHTML = "";
-
     target.appendChild(makeHead(""));
+
     for (let c = 0; c < SIZE; c++) {
       target.appendChild(makeHead(COL_LABELS[c]));
     }
@@ -436,7 +482,7 @@
     };
   }
 
-  function resolvePlayerShotLocal(row, col, coordText) {
+  async function resolvePlayerShotLocal(row, col, coordText) {
     const cell = state.enemyBoard[row][col];
     let result;
 
@@ -446,84 +492,49 @@
       result = applyNewShot(state.enemyBoard, state.enemyShips, row, col);
     }
 
-    playSound("fire");
+    await playFireThenResolve(async () => {
+      if (result.hit) {
+        renderBoards();
+        await playSound("hit");
+        if (result.sunk) await playSound("destroyed");
+        if (result.sunk) {
+          // already handled visually
+        }
+      } else {
+        renderBoards();
+        await playSound("miss");
+      }
+    });
 
     if (result.hit) {
-      playSound("hit");
-      if (result.sunk) playSound("destroyed");
-      updateStatus(result.sunk
-        ? `Treffer! Schiff versenkt auf ${coordText}. Du darfst nochmals schiessen.`
-        : `Treffer auf ${coordText}. Du darfst nochmals schiessen.`);
+      if (result.sunk) {
+        state.myTurn = true;
+      } else {
+        state.myTurn = true;
+      }
     } else {
-      playSound("miss");
-      updateStatus(`Wasser auf ${coordText}. Jetzt ist der PC am Zug.`);
       state.myTurn = false;
     }
 
-    renderBoards();
+    if (result.hit) {
+      // status after sounds for tighter feedback
+    } else {
+      // status after sounds
+    }
+
+    if (result.hit) {
+      if (result.sunk) {
+        // keep text minimal
+      }
+    }
 
     if (result.allSunk) {
       state.gameOver = true;
-      updateStatus("Du hast gewonnen!");
-      updateTurnInfo();
-      return;
     }
 
-    updateTurnInfo();
-
-    if (!state.myTurn && !state.gameOver) {
+    if (!result.hit && !state.gameOver) {
       window.setTimeout(pcTurn, 800);
     }
-  }
-
-  function resolvePlayerShotOnline(row, col, coordText) {
-    if (!state.onlineConnected || !rtc.dc || rtc.dc.readyState !== "open") {
-      updateStatus("Online-Verbindung fehlt.");
-      playSound("error");
-      return;
-    }
-
-    playSound("fire");
-
-    sendOnlineMessage({
-      type: "shot",
-      payload: { row, col, coordText }
-    });
-
-    updateStatus(`Schuss gesendet: ${coordText}. Warte auf Antwort.`);
-  }
-
-  function autoFireFromParsed(parsed) {
-    if (!parsed) {
-      playSound("error");
-      updateStatus("Ungültige Koordinate.");
-      return;
-    }
-
-    if (!canPlayerShootNow()) {
-      playSound("error");
-      updateStatus("Du bist nicht am Zug.");
-      return;
-    }
-
-    setLastInput(parsed.text);
-    playSound("copy");
-
-    if (state.isOnline) {
-      resolvePlayerShotOnline(parsed.row, parsed.col, parsed.text);
-    } else {
-      resolvePlayerShotLocal(parsed.row, parsed.col, parsed.text);
-    }
-  }
-
-  function tryAutoFireFromString(coordString) {
-    const parsed = parseCoordString(coordString);
-    if (!parsed) {
-      playSound("error");
-      updateStatus("Ungültige Koordinate. Erst Zeile N–Z, dann Spalte A–M.");
-      return;
-    }
-    autoFireFromParsed(parsed);
   }
 
   function choosePcShot() {
@@ -575,12 +586,8 @@
       addPcTargets(row, col);
       if (result.sunk) {
         state.pcTargetStack = [];
-        updateStatus(`PC trifft ${coordText} und versenkt ein Schiff. PC ist nochmals am Zug.`);
-      } else {
-        updateStatus(`PC trifft ${coordText}. PC ist nochmals am Zug.`);
       }
     } else {
-      updateStatus(`PC schiesst auf ${coordText}: Wasser. Du bist am Zug.`);
       state.myTurn = true;
     }
 
@@ -588,12 +595,8 @@
 
     if (result.allSunk) {
       state.gameOver = true;
-      updateStatus("Der PC hat gewonnen.");
-      updateTurnInfo();
       return;
     }
-
-    updateTurnInfo();
 
     if (!state.myTurn && !state.gameOver) {
       window.setTimeout(pcTurn, 900);
@@ -610,10 +613,10 @@
     if (state.inputMode === "morse") dom.morseInputPanel.classList.remove("hidden");
   }
 
-  function fireByText() {
+  async function fireByText() {
     const raw = dom.coordInput.value;
     dom.coordInput.value = "";
-    tryAutoFireFromString(raw);
+    await tryAutoFireFromString(raw);
   }
 
   function initSpeechRecognition() {
@@ -631,21 +634,17 @@
     speechRecognition.interimResults = true;
     speechRecognition.maxAlternatives = 1;
 
-    let collectedLetters = [];
-    let finalTranscript = "";
-
     speechRecognition.onstart = () => {
       speechActive = true;
-      collectedLetters = [];
-      finalTranscript = "";
       dom.speechRaw.textContent = "Aufnahme läuft …";
       dom.speechCoord.textContent = "-";
-      updateStatus("NATO-Aufnahme läuft.");
     };
 
     speechRecognition.onresult = (event) => {
+      let finalTranscript = "";
       let interim = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
+
+      for (let i = 0; i < event.results.length; i++) {
         const txt = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
           finalTranscript += " " + txt;
@@ -660,35 +659,30 @@
       const parsed = parseNatoText(full);
       if (parsed) {
         dom.speechCoord.textContent = parsed.text;
-        collectedLetters = parsed.text.split("");
-        if (collectedLetters.length === 2) {
-          try {
-            speechRecognition.stop();
-          } catch (_) {}
-        }
+        try {
+          speechRecognition.stop();
+        } catch (_) {}
       } else {
         dom.speechCoord.textContent = "-";
       }
     };
 
-    speechRecognition.onerror = (event) => {
-      updateStatus(`Spracherkennung-Fehler: ${event.error}`);
-    };
+    speechRecognition.onerror = () => {};
 
-    speechRecognition.onend = () => {
+    speechRecognition.onend = async () => {
       speechActive = false;
       const coord = dom.speechCoord.textContent;
       if (coord && coord !== "-") {
-        tryAutoFireFromString(coord);
+        await tryAutoFireFromString(coord);
       } else if (dom.speechRaw.textContent && dom.speechRaw.textContent !== "-") {
-        playSound("error");
-        updateStatus("Keine gültige NATO-Koordinate erkannt.");
+        await playPreShotFeedback(false);
       }
     };
   }
 
   function startNatoRecognition() {
     if (!speechRecognition || speechActive) return;
+    ensureAudioContext();
     try {
       dom.speechRaw.textContent = "-";
       dom.speechCoord.textContent = "-";
@@ -719,6 +713,7 @@
     state.morseCurrent = "";
     state.morseLetters = [];
     updateMorseDisplay();
+    stopMorseTone();
   }
 
   function scheduleMorseLetterCommit() {
@@ -733,22 +728,19 @@
     const symbol = durationMs >= MORSE_LONG_PRESS_MS ? "-" : ".";
     state.morseCurrent += symbol;
     updateMorseDisplay();
-    updateStatus(symbol === "." ? "Punkt erkannt." : "Strich erkannt.");
     scheduleMorseLetterCommit();
   }
 
-  function commitCurrentMorseLetterFromPause() {
+  async function commitCurrentMorseLetterFromPause() {
     if (!state.morseCurrent) return;
 
     const letter = MORSE_TO_LETTER[state.morseCurrent];
     const morseCode = state.morseCurrent;
-
     state.morseCurrent = "";
 
     if (!letter) {
       updateMorseDisplay();
-      playSound("error");
-      updateStatus(`Ungültiges Morsezeichen: ${morseCode}`);
+      await playPreShotFeedback(false);
       resetMorseInput();
       return;
     }
@@ -757,30 +749,27 @@
 
     if (pos === 0 && !isValidRowLetter(letter)) {
       updateMorseDisplay();
-      playSound("error");
-      updateStatus("Der erste Morse-Buchstabe muss eine Zeile von N bis Z sein.");
+      await playPreShotFeedback(false);
       resetMorseInput();
       return;
     }
 
     if (pos === 1 && !isValidColLetter(letter)) {
       updateMorseDisplay();
-      playSound("error");
-      updateStatus("Der zweite Morse-Buchstabe muss eine Spalte von A bis M sein.");
+      await playPreShotFeedback(false);
       resetMorseInput();
       return;
     }
 
     state.morseLetters.push(letter);
     updateMorseDisplay();
-    updateStatus(`Morse-Buchstabe erkannt: ${letter}`);
 
     if (state.morseLetters.length === 2) {
       const coord = state.morseLetters.join("");
-      window.setTimeout(() => {
-        tryAutoFireFromString(coord);
+      setTimeout(async () => {
+        await tryAutoFireFromString(coord);
         resetMorseInput();
-      }, 60);
+      }, 50);
     }
   }
 
@@ -801,7 +790,6 @@
       pendingStartMorseTrigger = { type: "keyboard", key: e.key };
       waitingForStartMorseKey = false;
       updateStartMorseKeyDisplay();
-      updateStatus(`Morse-Taste gesetzt: ${formatTrigger(pendingStartMorseTrigger)}`);
       return;
     }
 
@@ -812,6 +800,7 @@
       e.preventDefault();
       clearMorseTimers();
       morsePressStart = performance.now();
+      startMorseTone();
       return;
     }
   }
@@ -823,6 +812,7 @@
       e.preventDefault();
       const duration = performance.now() - morsePressStart;
       morsePressStart = null;
+      stopMorseTone();
       registerMorseSymbol(duration);
     }
   }
@@ -833,14 +823,12 @@
         pendingStartMorseTrigger = { type: "mouse-left" };
         waitingForStartMorseKey = false;
         updateStartMorseKeyDisplay();
-        updateStatus("Morse-Taste gesetzt: Maus links");
         return;
       }
       if (e.button === 2) {
         pendingStartMorseTrigger = { type: "mouse-right" };
         waitingForStartMorseKey = false;
         updateStartMorseKeyDisplay();
-        updateStatus("Morse-Taste gesetzt: Maus rechts");
         return;
       }
     }
@@ -851,12 +839,14 @@
       clearMorseTimers();
       morsePointerId = e.pointerId;
       morsePressStart = performance.now();
+      startMorseTone();
     }
 
     if (state.morseTrigger.type === "mouse-right" && e.button === 2 && !morseRightMouseDown) {
       clearMorseTimers();
       morseRightMouseDown = true;
       morsePressStart = performance.now();
+      startMorseTone();
     }
   }
 
@@ -867,6 +857,7 @@
       const duration = performance.now() - morsePressStart;
       morsePressStart = null;
       morsePointerId = null;
+      stopMorseTone();
       registerMorseSymbol(duration);
     }
 
@@ -874,6 +865,7 @@
       const duration = performance.now() - morsePressStart;
       morsePressStart = null;
       morseRightMouseDown = false;
+      stopMorseTone();
       registerMorseSymbol(duration);
     }
   }
@@ -896,8 +888,6 @@
       if (rtc.pc.iceConnectionState === "connected" || rtc.pc.iceConnectionState === "completed") {
         rtc.connected = true;
         state.onlineConnected = true;
-        updateStatus("Online-Verbindung hergestellt.");
-        renderBoards();
       }
     };
 
@@ -913,26 +903,19 @@
     rtc.dc.onopen = () => {
       rtc.connected = true;
       state.onlineConnected = true;
-      updateStatus("Online-Verbindung offen. Spiel kann beginnen.");
-      renderBoards();
-      updateTurnInfo();
       sendOnlineMessage({ type: "hello", payload: { info: "ready" } });
     };
 
     rtc.dc.onclose = () => {
       rtc.connected = false;
       state.onlineConnected = false;
-      updateStatus("Online-Verbindung geschlossen.");
-      renderBoards();
     };
 
     rtc.dc.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
         handleOnlineMessage(msg);
-      } catch (err) {
-        console.error(err);
-      }
+      } catch (_) {}
     };
   }
 
@@ -956,11 +939,8 @@
       await waitForIceGatheringComplete(rtc.pc);
 
       dom.offerBox.value = JSON.stringify(rtc.pc.localDescription);
-      updateStatus("Angebot erstellt. Sende es an den Mitspieler.");
-      updateTurnInfo();
     } catch (_) {
-      updateStatus("Fehler beim Erstellen des Angebots.");
-      playSound("error");
+      await playPreShotFeedback(false);
     }
   }
 
@@ -968,8 +948,7 @@
     try {
       const raw = dom.offerInput.value.trim();
       if (!raw) {
-        updateStatus("Bitte zuerst ein Angebot einfügen.");
-        playSound("error");
+        await playPreShotFeedback(false);
         return;
       }
 
@@ -986,11 +965,8 @@
       await waitForIceGatheringComplete(rtc.pc);
 
       dom.answerBox.value = JSON.stringify(rtc.pc.localDescription);
-      updateStatus("Antwort erstellt. Sende sie an den Host.");
-      updateTurnInfo();
     } catch (_) {
-      updateStatus("Fehler beim Erstellen der Antwort.");
-      playSound("error");
+      await playPreShotFeedback(false);
     }
   }
 
@@ -998,17 +974,14 @@
     try {
       const raw = dom.answerInput.value.trim();
       if (!raw) {
-        updateStatus("Bitte zuerst eine Antwort einfügen.");
-        playSound("error");
+        await playPreShotFeedback(false);
         return;
       }
 
       const answer = JSON.parse(raw);
       await rtc.pc.setRemoteDescription(answer);
-      updateStatus("Antwort übernommen. Warte auf Verbindung.");
     } catch (_) {
-      updateStatus("Fehler beim Übernehmen der Antwort.");
-      playSound("error");
+      await playPreShotFeedback(false);
     }
   }
 
@@ -1046,7 +1019,6 @@
 
     switch (msg.type) {
       case "hello":
-        updateStatus("Mitspieler ist verbunden.");
         break;
       case "shot":
         receiveIncomingShot(msg.payload);
@@ -1056,9 +1028,6 @@
         break;
       case "gameOver":
         state.gameOver = true;
-        updateStatus(msg.payload?.message || "Spiel beendet.");
-        updateTurnInfo();
-        renderBoards();
         break;
     }
   }
@@ -1066,7 +1035,7 @@
   function receiveIncomingShot(payload) {
     if (state.gameOver) return;
 
-    const { row, col, coordText } = payload;
+    const { row, col } = payload;
     const cell = state.playerBoard[row][col];
 
     let result;
@@ -1082,21 +1051,16 @@
       result = applyNewShot(state.playerBoard, state.playerShips, row, col);
     }
 
-    renderBoards();
-
-    if (result.hit) {
-      updateStatus(`Gegner trifft ${coordText}. Gegner darf nochmals schiessen.`);
-    } else {
-      updateStatus(`Gegner schiesst ${coordText}: Wasser. Du bist am Zug.`);
+    if (!result.hit) {
       state.myTurn = true;
     }
 
-    updateTurnInfo();
+    renderBoards();
 
     sendOnlineMessage({
       type: "shotResult",
       payload: {
-        row, col, coordText,
+        row, col,
         valid: true,
         hit: result.hit,
         sunk: result.sunk,
@@ -1106,8 +1070,6 @@
 
     if (result.allSunk) {
       state.gameOver = true;
-      updateStatus("Du hast verloren.");
-      updateTurnInfo();
       sendOnlineMessage({
         type: "gameOver",
         payload: { message: "Du hast gewonnen." }
@@ -1115,38 +1077,33 @@
     }
   }
 
-  function applyRemoteShotResult(payload) {
-    const { row, col, coordText, valid, hit, sunk, allSunk, message } = payload;
+  async function applyRemoteShotResult(payload) {
+    const { row, col, valid, hit, sunk, allSunk } = payload;
 
     if (!valid) {
-      updateStatus(message || "Ungültiger Schuss.");
-      playSound("error");
+      await playPreShotFeedback(false);
       return;
     }
 
-    const remoteCell = state.remoteBoardShots[row][col];
-    if (hit) {
-      remoteCell.hit = true;
-      playSound("hit");
-      if (sunk) playSound("destroyed");
-      updateStatus(sunk
-        ? `Treffer! Schiff versenkt auf ${coordText}. Du darfst nochmals schiessen.`
-        : `Treffer auf ${coordText}. Du darfst nochmals schiessen.`);
-      state.myTurn = true;
-    } else {
-      remoteCell.miss = true;
-      playSound("miss");
-      updateStatus(`Wasser auf ${coordText}. Jetzt ist der Gegner am Zug.`);
-      state.myTurn = false;
-    }
+    await playFireThenResolve(async () => {
+      const remoteCell = state.remoteBoardShots[row][col];
+      if (hit) {
+        remoteCell.hit = true;
+        renderBoards();
+        await playSound("hit");
+        if (sunk) await playSound("destroyed");
+        state.myTurn = true;
+      } else {
+        remoteCell.miss = true;
+        renderBoards();
+        await playSound("miss");
+        state.myTurn = false;
+      }
+    });
 
     if (allSunk) {
       state.gameOver = true;
-      updateStatus("Du hast gewonnen!");
     }
-
-    renderBoards();
-    updateTurnInfo();
   }
 
   function showStartPanels() {
@@ -1156,7 +1113,6 @@
 
   function beginChooseStartMorseKey() {
     waitingForStartMorseKey = true;
-    updateStatus("Taste wählen: Drücke jetzt eine Taste oder Maus links / rechts.");
   }
 
   function startGameFromOverlay() {
@@ -1164,11 +1120,10 @@
     const inputMode = dom.startInputMode.value;
 
     if (inputMode === "morse" && !pendingStartMorseTrigger) {
-      playSound("error");
-      updateStatus("Bitte zuerst die Morse-Taste wählen.");
       return;
     }
 
+    ensureAudioContext();
     resetState(mode, inputMode, pendingStartMorseTrigger);
     dom.startOverlay.classList.add("hidden");
 
@@ -1180,8 +1135,41 @@
   function reopenStartOverlay() {
     stopNatoRecognition();
     cleanupRTC();
+    resetMorseInput();
     dom.startOverlay.classList.remove("hidden");
     showStartPanels();
+  }
+
+  async function tryAutoFireFromString(coordString) {
+    const parsed = parseCoordString(coordString);
+
+    if (!parsed) {
+      await playPreShotFeedback(false);
+      return;
+    }
+
+    if (!canPlayerShootNow()) {
+      await playPreShotFeedback(false);
+      return;
+    }
+
+    await playPreShotFeedback(true);
+
+    if (state.isOnline) {
+      if (!state.onlineConnected || !rtc.dc || rtc.dc.readyState !== "open") {
+        await playPreShotFeedback(false);
+        return;
+      }
+      sendOnlineMessage({
+        type: "shot",
+        payload: { row: parsed.row, col: parsed.col, coordText: parsed.text }
+      });
+      setLastInput(parsed.text);
+      return;
+    }
+
+    setLastInput(parsed.text);
+    await resolvePlayerShotLocal(parsed.row, parsed.col, parsed.text);
   }
 
   dom.startGameMode.addEventListener("change", showStartPanels);
@@ -1200,7 +1188,6 @@
 
   dom.btnClearMorse.addEventListener("click", () => {
     resetMorseInput();
-    updateStatus("Morse-Eingabe zurückgesetzt.");
   });
 
   dom.btnCreateOffer.addEventListener("click", onCreateOffer);
