@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="de-CH">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Schiffe versenken</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div>
+        <h1>Schiffe versenken</h1>
+        <p class="subtitle">10×10 • Text • NATO-Sprache • Morse • PC oder Online-Mensch</p>
+      </div>
+      <button id="btnNewGame" class="btn primary">Neues Spiel</button>
+    </header>
+
+    <section class="panel">
+      <div class="grid-two">
+        <div>
+          <label class="label" for="gameMode">Spielmodus</label>
+          <select id="gameMode">
+            <option value="pc">Gegen PC</option>
+            <option value="online">Gegen Mensch online</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="label" for="inputMode">Eingabeart</label>
+          <select id="inputMode">
+            <option value="text">Textfeld</option>
+            <option value="nato">Spracheingabe NATO</option>
+            <option value="morse">Morse-Eingabe</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="onlinePanel" class="online-panel hidden">
+        <div class="grid-two">
+          <div class="card">
+            <h2>Host</h2>
+            <p>1. Auf <strong>Angebot erstellen</strong> klicken.</p>
+            <p>2. Den Text an den Mitspieler senden.</p>
+            <p>3. Die Antwort des Mitspielers unten einfügen.</p>
+            <button id="btnCreateOffer" class="btn">Angebot erstellen</button>
+            <label class="label mt8" for="offerBox">Mein Angebot</label>
+            <textarea id="offerBox" rows="6" readonly></textarea>
+
+            <label class="label mt8" for="answerInput">Antwort des Mitspielers einfügen</label>
+            <textarea id="answerInput" rows="6"></textarea>
+            <button id="btnAcceptAnswer" class="btn mt8">Antwort übernehmen</button>
+          </div>
+
+          <div class="card">
+            <h2>Gast</h2>
+            <p>1. Angebot des Hosts unten einfügen.</p>
+            <p>2. Auf <strong>Antwort erzeugen</strong> klicken.</p>
+            <p>3. Die Antwort an den Host senden.</p>
+            <label class="label" for="offerInput">Angebot vom Host</label>
+            <textarea id="offerInput" rows="6"></textarea>
+            <button id="btnCreateAnswer" class="btn mt8">Antwort erzeugen</button>
+
+            <label class="label mt8" for="answerBox">Meine Antwort</label>
+            <textarea id="answerBox" rows="6" readonly></textarea>
+          </div>
+        </div>
+        <p class="mini muted">
+          Hinweis: Diese Online-Version funktioniert ohne Server über eine direkte Verbindung zwischen zwei Browsern.
+        </p>
+      </div>
+
+      <div class="status-row">
+        <div class="status-item"><strong>Status:</strong> <span id="statusText">Bereit.</span></div>
+        <div class="status-item"><strong>Am Zug:</strong> <span id="turnText">-</span></div>
+        <div class="status-item"><strong>Letzte Eingabe:</strong> <span id="lastInputText">-</span></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="grid-two boards">
+        <div class="board-card">
+          <h2>Dein Feld</h2>
+          <div class="legend">
+            <span><i class="lg ship"></i> Schiff</span>
+            <span><i class="lg hit"></i> Treffer</span>
+            <span><i class="lg miss"></i> Wasser</span>
+          </div>
+          <div id="playerBoard" class="board"></div>
+        </div>
+
+        <div class="board-card">
+          <h2>Gegnerfeld</h2>
+          <div class="legend">
+            <span>Klicke oder gib Koordinaten ein</span>
+          </div>
+          <div id="enemyBoard" class="board"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Eingabe</h2>
+
+      <div id="textInputPanel" class="input-panel">
+        <label class="label" for="coordInput">Koordinate mit zwei Buchstaben</label>
+        <input id="coordInput" type="text" maxlength="3" placeholder="z. B. BF" autocomplete="off" />
+        <p class="mini">
+          Reihenfolge ist wichtig: <strong>BF</strong> ist nicht gleich <strong>FB</strong>.
+          Erst Zeile, dann Spalte.
+        </p>
+        <button id="btnFireText" class="btn primary">Schiessen</button>
+      </div>
+
+      <div id="natoInputPanel" class="input-panel hidden">
+        <p class="mini">
+          Sprich zwei NATO-Wörter, z. B. <strong>Bravo Foxtrot</strong>.
+        </p>
+        <div class="speech-row">
+          <button id="btnStartNato" class="btn primary">NATO-Aufnahme starten</button>
+          <button id="btnStopNato" class="btn">Stoppen</button>
+        </div>
+        <div class="speech-box">
+          <div><strong>Erkannt:</strong> <span id="speechRaw">-</span></div>
+          <div><strong>Koordinate:</strong> <span id="speechCoord">-</span></div>
+        </div>
+      </div>
+
+      <div id="morseInputPanel" class="input-panel hidden">
+        <p class="mini">
+          Gib nacheinander zwei Buchstaben in Morse ein. Nach jedem Buchstaben auf <strong>Buchstabe übernehmen</strong> klicken.
+        </p>
+
+        <div class="morse-pad">
+          <button id="btnDot" class="btn morse">· Punkt</button>
+          <button id="btnDash" class="btn morse">– Strich</button>
+          <button id="btnClearMorse" class="btn">Löschen</button>
+        </div>
+
+        <div class="morse-display">
+          <div><strong>Aktuell:</strong> <span id="morseCurrent">-</span></div>
+          <div><strong>Buchstaben:</strong> <span id="morseLetters">-</span></div>
+          <div><strong>Koordinate:</strong> <span id="morseCoord">-</span></div>
+        </div>
+
+        <div class="morse-actions">
+          <button id="btnCommitMorseLetter" class="btn">Buchstabe übernehmen</button>
+          <button id="btnResetMorseLetters" class="btn">Buchstaben zurücksetzen</button>
+          <button id="btnFireMorse" class="btn primary">Schiessen</button>
+        </div>
+
+        <details class="morse-help">
+          <summary>Morse-Hilfe A–J</summary>
+          <div class="mini">
+            A .- &nbsp; B -... &nbsp; C -.-. &nbsp; D -.. &nbsp; E . &nbsp; F ..-. &nbsp; G --. &nbsp; H .... &nbsp; I .. &nbsp; J .---
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Spielregeln</h2>
+      <ul class="rules">
+        <li>Spielfeld: 10×10</li>
+        <li>Schiffe sind automatisch gesetzt.</li>
+        <li>Abwechselnd schiessen.</li>
+        <li>Bei einem Treffer darfst du nochmals schiessen.</li>
+        <li>Gewonnen hat, wer alle gegnerischen Schiffsfelder trifft.</li>
+      </ul>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
