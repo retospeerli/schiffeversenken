@@ -1,15 +1,22 @@
 /* =========================================================
-   SCHIFFE VERSENKEN
-   - 10x10
-   - PC oder Online-Mensch (serverlos via WebRTC + manuellem Signaling)
-   - Eingabe: Text, NATO-Sprache, Morse
-   - Treffer => nochmals schiessen
+   SCHIFFE VERSENKEN 13x13
+   Zeilen: N-Z
+   Spalten: A-M
+
+   Eingabe nur über:
+   - Tastatur
+   - NATO-Spracheingabe
+   - Morse per frei definierbaren Tasten
+
+   Kein Anklicken des Spielfelds.
 ========================================================= */
 
 (() => {
-  const SIZE = 10;
-  const LETTERS = "ABCDEFGHIJ".split("");
-  const SHIP_LENGTHS = [5, 4, 3, 3, 2];
+  const SIZE = 13;
+  const COL_LABELS = "ABCDEFGHIJKLM".split("");
+  const ROW_LABELS = "NOPQRSTUVWXYZ".split("");
+  const ALLOWED_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+  const SHIP_LENGTHS = [6, 5, 4, 4, 3, 3, 2];
 
   const NATO_MAP = {
     alfa: "A", alpha: "A",
@@ -34,8 +41,7 @@
     tango: "T",
     uniform: "U",
     victor: "V",
-    whiskey: "W",
-    whisky: "W",
+    whiskey: "W", whisky: "W",
     xray: "X", "x-ray": "X",
     yankee: "Y",
     zulu: "Z"
@@ -93,12 +99,16 @@
     speechRaw: document.getElementById("speechRaw"),
     speechCoord: document.getElementById("speechCoord"),
 
-    btnDot: document.getElementById("btnDot"),
-    btnDash: document.getElementById("btnDash"),
     btnClearMorse: document.getElementById("btnClearMorse"),
     btnCommitMorseLetter: document.getElementById("btnCommitMorseLetter"),
     btnResetMorseLetters: document.getElementById("btnResetMorseLetters"),
     btnFireMorse: document.getElementById("btnFireMorse"),
+
+    btnSetDotKey: document.getElementById("btnSetDotKey"),
+    btnSetDashKey: document.getElementById("btnSetDashKey"),
+    dotKeyDisplay: document.getElementById("dotKeyDisplay"),
+    dashKeyDisplay: document.getElementById("dashKeyDisplay"),
+
     morseCurrent: document.getElementById("morseCurrent"),
     morseLetters: document.getElementById("morseLetters"),
     morseCoord: document.getElementById("morseCoord"),
@@ -114,7 +124,6 @@
   };
 
   let state = null;
-
   let speechRecognition = null;
   let speechActive = false;
 
@@ -124,6 +133,8 @@
     connected: false,
     role: null
   };
+
+  let waitingForKeyBind = null; // "dot" | "dash" | null
 
   function createEmptyBoard() {
     return Array.from({ length: SIZE }, () =>
@@ -136,16 +147,21 @@
     );
   }
 
-  function createShipsInfo() {
-    return [];
-  }
-
   function randomInt(max) {
     return Math.floor(Math.random() * max);
   }
 
   function inBounds(r, c) {
     return r >= 0 && r < SIZE && c >= 0 && c < SIZE;
+  }
+
+  function createPlacedBoard() {
+    const board = createEmptyBoard();
+    const ships = [];
+    for (const len of SHIP_LENGTHS) {
+      placeShip(board, ships, len);
+    }
+    return { board, ships };
   }
 
   function canPlaceShip(board, row, col, len, horizontal) {
@@ -169,6 +185,7 @@
 
       const shipId = ships.length;
       const cells = [];
+
       for (let i = 0; i < len; i++) {
         const r = horizontal ? row : row + i;
         const c = horizontal ? col + i : col;
@@ -176,6 +193,7 @@
         board[r][c].shipId = shipId;
         cells.push([r, c]);
       }
+
       ships.push({
         id: shipId,
         len,
@@ -183,17 +201,9 @@
         hits: 0,
         sunk: false
       });
+
       placed = true;
     }
-  }
-
-  function createPlacedBoard() {
-    const board = createEmptyBoard();
-    const ships = createShipsInfo();
-    for (const len of SHIP_LENGTHS) {
-      placeShip(board, ships, len);
-    }
-    return { board, ships };
   }
 
   function resetState() {
@@ -203,6 +213,9 @@
     state = {
       mode: dom.gameMode.value,
       inputMode: dom.inputMode.value,
+      isOnline: dom.gameMode.value === "online",
+      isHost: false,
+      onlineConnected: false,
 
       myTurn: true,
       gameOver: false,
@@ -213,29 +226,27 @@
       enemyBoard: enemy.board,
       enemyShips: enemy.ships,
 
-      // online related
-      isOnline: dom.gameMode.value === "online",
-      isHost: false,
-      onlineConnected: false,
+      remoteBoardShots: createEmptyBoard(),
 
-      // enemy mirror for online
-      remoteBoardShots: createEmptyBoard(), // what I know about enemy board
-      localIdentity: `player-${Math.random().toString(36).slice(2, 9)}`,
-
-      // morse
       morseCurrent: "",
       morseLetters: [],
+      morseDotKey: ".",
+      morseDashKey: "-",
 
-      // PC memory
       pcTargetStack: [],
       pcTriedShots: new Set()
     };
 
-    updateStatus("Neues Spiel gestartet.");
-    renderBoards();
+    waitingForKeyBind = null;
+    dom.dotKeyDisplay.textContent = formatKeyLabel(state.morseDotKey);
+    dom.dashKeyDisplay.textContent = formatKeyLabel(state.morseDashKey);
+
+    updateMorseDisplay();
     updateInputPanels();
+    updateStatus("Neues Spiel gestartet.");
     updateTurnInfo();
     setLastInput("-");
+    renderBoards();
   }
 
   function updateStatus(text) {
@@ -245,31 +256,45 @@
   function updateTurnInfo() {
     if (state.gameOver) {
       dom.turnText.textContent = "-";
-      return;
+    } else {
+      dom.turnText.textContent = state.myTurn ? "Du" : "Gegner";
     }
-    dom.turnText.textContent = state.myTurn ? "Du" : "Gegner";
   }
 
   function setLastInput(text) {
     dom.lastInputText.textContent = text;
   }
 
+  function formatKeyLabel(key) {
+    if (!key) return "-";
+    if (key === " ") return "Leertaste";
+    if (key === "Escape") return "Esc";
+    return key;
+  }
+
   function coordToString(row, col) {
-    return `${LETTERS[row]}${LETTERS[col]}`;
+    return `${ROW_LABELS[row]}${COL_LABELS[col]}`;
   }
 
   function parseCoordString(input) {
     if (!input) return null;
     const cleaned = input.trim().toUpperCase().replace(/[^A-Z]/g, "");
     if (cleaned.length !== 2) return null;
-    const r = LETTERS.indexOf(cleaned[0]);
-    const c = LETTERS.indexOf(cleaned[1]);
-    if (r === -1 || c === -1) return null;
-    return { row: r, col: c, text: cleaned };
+
+    const rowChar = cleaned[0];
+    const colChar = cleaned[1];
+
+    const row = ROW_LABELS.indexOf(rowChar);
+    const col = COL_LABELS.indexOf(colChar);
+
+    if (row === -1 || col === -1) return null;
+
+    return { row, col, text: cleaned };
   }
 
   function parseNatoText(raw) {
     if (!raw) return null;
+
     const normalized = raw
       .toLowerCase()
       .replace(/[.,;:!?/\\]/g, " ")
@@ -281,65 +306,14 @@
 
     for (const word of words) {
       const mapped = NATO_MAP[word];
-      if (mapped) letters.push(mapped);
+      if (mapped) {
+        letters.push(mapped);
+      }
       if (letters.length === 2) break;
     }
 
     if (letters.length !== 2) return null;
-
     return parseCoordString(letters.join(""));
-  }
-
-  function renderBoards() {
-    renderBoard(dom.playerBoard, state.playerBoard, true, false);
-    if (state.isOnline) {
-      renderBoard(dom.enemyBoard, state.remoteBoardShots, false, true);
-    } else {
-      renderBoard(dom.enemyBoard, state.enemyBoard, false, true);
-    }
-  }
-
-  function renderBoard(target, board, revealShips, clickableEnemyBoard) {
-    target.innerHTML = "";
-
-    target.appendChild(makeHead(""));
-    for (let c = 0; c < SIZE; c++) {
-      target.appendChild(makeHead(LETTERS[c]));
-    }
-
-    for (let r = 0; r < SIZE; r++) {
-      target.appendChild(makeHead(LETTERS[r]));
-      for (let c = 0; c < SIZE; c++) {
-        const cell = board[r][c];
-        const el = document.createElement("button");
-        el.className = "cell";
-        el.type = "button";
-
-        if (revealShips && cell.ship) {
-          el.classList.add("ship");
-        }
-        if (cell.hit) {
-          el.classList.add("hit");
-          el.textContent = "X";
-        } else if (cell.miss) {
-          el.classList.add("miss");
-          el.textContent = "•";
-        }
-
-        if (clickableEnemyBoard) {
-          const canShoot = canPlayerShootAt(r, c);
-          if (!canShoot) el.classList.add("disabled");
-          el.addEventListener("click", () => {
-            if (!canPlayerShootAt(r, c)) return;
-            handlePlayerShot(r, c, coordToString(r, c));
-          });
-        } else {
-          el.classList.add("disabled");
-        }
-
-        target.appendChild(el);
-      }
-    }
   }
 
   function makeHead(text) {
@@ -349,20 +323,59 @@
     return el;
   }
 
+  function renderBoards() {
+    renderBoard(dom.playerBoard, state.playerBoard, true);
+    renderBoard(dom.enemyBoard, state.isOnline ? state.remoteBoardShots : state.enemyBoard, false);
+  }
+
+  function renderBoard(target, board, revealShips) {
+    target.innerHTML = "";
+
+    target.appendChild(makeHead(""));
+    for (let c = 0; c < SIZE; c++) {
+      target.appendChild(makeHead(COL_LABELS[c]));
+    }
+
+    for (let r = 0; r < SIZE; r++) {
+      target.appendChild(makeHead(ROW_LABELS[r]));
+
+      for (let c = 0; c < SIZE; c++) {
+        const cell = board[r][c];
+        const el = document.createElement("div");
+        el.className = "cell";
+
+        if (revealShips && cell.ship) {
+          el.classList.add("ship");
+        }
+
+        if (cell.hit) {
+          el.classList.add("hit");
+          el.textContent = "X";
+        } else if (cell.miss) {
+          el.classList.add("miss");
+          el.textContent = "•";
+        }
+
+        target.appendChild(el);
+      }
+    }
+  }
+
   function canPlayerShootAt(r, c) {
     if (!state || state.gameOver || !state.myTurn) return false;
 
     if (state.isOnline) {
       const cell = state.remoteBoardShots[r][c];
       return !cell.hit && !cell.miss && state.onlineConnected;
-    } else {
-      const cell = state.enemyBoard[r][c];
-      return !cell.hit && !cell.miss;
     }
+
+    const cell = state.enemyBoard[r][c];
+    return !cell.hit && !cell.miss;
   }
 
   function fireAtBoard(board, ships, row, col) {
     const cell = board[row][col];
+
     if (cell.hit || cell.miss) {
       return { valid: false, message: "Auf dieses Feld wurde bereits geschossen." };
     }
@@ -371,9 +384,8 @@
       cell.hit = true;
       const ship = ships[cell.shipId];
       ship.hits += 1;
-      if (ship.hits >= ship.len) {
-        ship.sunk = true;
-      }
+      if (ship.hits >= ship.len) ship.sunk = true;
+
       return {
         valid: true,
         hit: true,
@@ -392,10 +404,25 @@
     };
   }
 
+  function tryPlayerShotFromParsed(parsed) {
+    if (!parsed) {
+      updateStatus("Ungültige Koordinate. Erst Zeile N–Z, dann Spalte A–M.");
+      return;
+    }
+
+    const { row, col, text } = parsed;
+    setLastInput(text);
+
+    if (!canPlayerShootAt(row, col)) {
+      updateStatus(state.myTurn ? "Ungültiger Schuss oder Feld schon benutzt." : "Du bist nicht am Zug.");
+      return;
+    }
+
+    handlePlayerShot(row, col, text);
+  }
+
   function handlePlayerShot(row, col, coordText) {
     if (state.gameOver) return;
-
-    setLastInput(coordText);
 
     if (state.isOnline) {
       sendOnlineShot(row, col, coordText);
@@ -410,11 +437,9 @@
     }
 
     if (result.hit) {
-      if (result.sunk) {
-        updateStatus(`Treffer! Schiff versenkt auf ${coordText}. Du darfst nochmals schiessen.`);
-      } else {
-        updateStatus(`Treffer auf ${coordText}. Du darfst nochmals schiessen.`);
-      }
+      updateStatus(result.sunk
+        ? `Treffer! Schiff versenkt auf ${coordText}. Du darfst nochmals schiessen.`
+        : `Treffer auf ${coordText}. Du darfst nochmals schiessen.`);
     } else {
       updateStatus(`Wasser auf ${coordText}. Jetzt ist der PC am Zug.`);
       state.myTurn = false;
@@ -437,10 +462,46 @@
     }
   }
 
+  function choosePcShot() {
+    while (state.pcTargetStack.length > 0) {
+      const next = state.pcTargetStack.shift();
+      const key = `${next.row},${next.col}`;
+      if (!state.pcTriedShots.has(key)) return next;
+    }
+
+    let row, col, key;
+    do {
+      row = randomInt(SIZE);
+      col = randomInt(SIZE);
+      key = `${row},${col}`;
+    } while (state.pcTriedShots.has(key));
+
+    return { row, col };
+  }
+
+  function addPcTargets(row, col) {
+    const candidates = [
+      { row: row - 1, col },
+      { row: row + 1, col },
+      { row, col: col - 1 },
+      { row, col: col + 1 }
+    ];
+
+    for (const item of candidates) {
+      if (!inBounds(item.row, item.col)) continue;
+      const key = `${item.row},${item.col}`;
+      if (!state.pcTriedShots.has(key)) {
+        if (!state.pcTargetStack.some(x => x.row === item.row && x.col === item.col)) {
+          state.pcTargetStack.push(item);
+        }
+      }
+    }
+  }
+
   function pcTurn() {
     if (state.gameOver) return;
 
-    let shot = choosePcShot();
+    const shot = choosePcShot();
     const { row, col } = shot;
     const coordText = coordToString(row, col);
 
@@ -482,44 +543,8 @@
     }
   }
 
-  function choosePcShot() {
-    while (state.pcTargetStack.length > 0) {
-      const next = state.pcTargetStack.shift();
-      const key = `${next.row},${next.col}`;
-      if (!state.pcTriedShots.has(key)) return next;
-    }
-
-    let row, col, key;
-    do {
-      row = randomInt(SIZE);
-      col = randomInt(SIZE);
-      key = `${row},${col}`;
-    } while (state.pcTriedShots.has(key));
-
-    return { row, col };
-  }
-
-  function addPcTargets(row, col) {
-    const candidates = [
-      { row: row - 1, col },
-      { row: row + 1, col },
-      { row, col: col - 1 },
-      { row, col: col + 1 }
-    ];
-
-    for (const item of candidates) {
-      if (!inBounds(item.row, item.col)) continue;
-      const key = `${item.row},${item.col}`;
-      if (!state.pcTriedShots.has(key)) {
-        if (!state.pcTargetStack.some(x => x.row === item.row && x.col === item.col)) {
-          state.pcTargetStack.push(item);
-        }
-      }
-    }
-  }
-
   /* =========================
-     ONLINE (WebRTC)
+     ONLINE / WEBRTC
   ========================= */
 
   async function createPeerConnection() {
@@ -554,13 +579,7 @@
       updateStatus("Online-Verbindung offen. Spiel kann beginnen.");
       renderBoards();
       updateTurnInfo();
-
-      sendOnlineMessage({
-        type: "hello",
-        payload: {
-          info: "ready"
-        }
-      });
+      sendOnlineMessage({ type: "hello", payload: { info: "ready" } });
     };
 
     rtc.dc.onclose = () => {
@@ -597,7 +616,6 @@
 
       const offer = await rtc.pc.createOffer();
       await rtc.pc.setLocalDescription(offer);
-
       await waitForIceGatheringComplete(rtc.pc);
 
       dom.offerBox.value = JSON.stringify(rtc.pc.localDescription);
@@ -627,7 +645,6 @@
 
       const answer = await rtc.pc.createAnswer();
       await rtc.pc.setLocalDescription(answer);
-
       await waitForIceGatheringComplete(rtc.pc);
 
       dom.answerBox.value = JSON.stringify(rtc.pc.localDescription);
@@ -646,6 +663,7 @@
         updateStatus("Bitte zuerst eine Antwort einfügen.");
         return;
       }
+
       const answer = JSON.parse(raw);
       await rtc.pc.setRemoteDescription(answer);
       updateStatus("Antwort übernommen. Warte auf Verbindung.");
@@ -711,24 +729,18 @@
       case "hello":
         updateStatus("Mitspieler ist verbunden.");
         break;
-
       case "shot":
         receiveIncomingShot(msg.payload);
         break;
-
       case "shotResult":
         applyRemoteShotResult(msg.payload);
         break;
-
       case "gameOver":
         state.gameOver = true;
         updateStatus(msg.payload?.message || "Spiel beendet.");
         updateTurnInfo();
         renderBoards();
         break;
-
-      default:
-        console.warn("Unbekannter Nachrichtentyp:", msg.type);
     }
   }
 
@@ -776,6 +788,7 @@
       state.gameOver = true;
       updateStatus("Du hast verloren.");
       updateTurnInfo();
+
       sendOnlineMessage({
         type: "gameOver",
         payload: { message: "Du hast gewonnen." }
@@ -785,6 +798,7 @@
 
   function applyRemoteShotResult(payload) {
     const { row, col, coordText, valid, hit, sunk, allSunk, message } = payload;
+
     if (!valid) {
       updateStatus(message || "Ungültiger Schuss.");
       return;
@@ -792,11 +806,9 @@
 
     if (hit) {
       state.remoteBoardShots[row][col].hit = true;
-      if (sunk) {
-        updateStatus(`Treffer! Schiff versenkt auf ${coordText}. Du darfst nochmals schiessen.`);
-      } else {
-        updateStatus(`Treffer auf ${coordText}. Du darfst nochmals schiessen.`);
-      }
+      updateStatus(sunk
+        ? `Treffer! Schiff versenkt auf ${coordText}. Du darfst nochmals schiessen.`
+        : `Treffer auf ${coordText}. Du darfst nochmals schiessen.`);
       state.myTurn = true;
     } else {
       state.remoteBoardShots[row][col].miss = true;
@@ -814,7 +826,7 @@
   }
 
   /* =========================
-     SPRACHE: NATO
+     NATO-SPRACHE
   ========================= */
 
   function initSpeechRecognition() {
@@ -856,11 +868,7 @@
       dom.speechRaw.textContent = full || "-";
 
       const parsed = parseNatoText(full);
-      if (parsed) {
-        dom.speechCoord.textContent = parsed.text;
-      } else {
-        dom.speechCoord.textContent = "-";
-      }
+      dom.speechCoord.textContent = parsed ? parsed.text : "-";
     };
 
     speechRecognition.onerror = (event) => {
@@ -871,6 +879,7 @@
       speechActive = false;
       const raw = dom.speechRaw.textContent;
       const parsed = parseNatoText(raw);
+
       if (parsed && state.myTurn && !state.gameOver) {
         setLastInput(parsed.text);
         handlePlayerShot(parsed.row, parsed.col, parsed.text);
@@ -881,8 +890,7 @@
   }
 
   function startNatoRecognition() {
-    if (!speechRecognition) return;
-    if (speechActive) return;
+    if (!speechRecognition || speechActive) return;
     try {
       dom.speechRaw.textContent = "-";
       dom.speechCoord.textContent = "-";
@@ -904,18 +912,70 @@
   function updateMorseDisplay() {
     dom.morseCurrent.textContent = state.morseCurrent || "-";
     dom.morseLetters.textContent = state.morseLetters.length ? state.morseLetters.join(" ") : "-";
-
-    if (state.morseLetters.length === 2) {
-      dom.morseCoord.textContent = state.morseLetters.join("");
-    } else {
-      dom.morseCoord.textContent = "-";
-    }
+    dom.morseCoord.textContent = state.morseLetters.length === 2 ? state.morseLetters.join("") : "-";
   }
 
-  function addMorseSymbol(symbol) {
+  function beginKeyBinding(which) {
+    waitingForKeyBind = which;
+    updateStatus(which === "dot"
+      ? "Drücke jetzt die gewünschte Taste für Punkt."
+      : "Drücke jetzt die gewünschte Taste für Strich.");
+  }
+
+  function handleGlobalKeydown(e) {
+    const key = e.key;
+
+    if (waitingForKeyBind) {
+      e.preventDefault();
+
+      if (waitingForKeyBind === "dot") {
+        state.morseDotKey = key;
+        dom.dotKeyDisplay.textContent = formatKeyLabel(key);
+        updateStatus(`Taste für Punkt gesetzt: ${formatKeyLabel(key)}`);
+      } else if (waitingForKeyBind === "dash") {
+        state.morseDashKey = key;
+        dom.dashKeyDisplay.textContent = formatKeyLabel(key);
+        updateStatus(`Taste für Strich gesetzt: ${formatKeyLabel(key)}`);
+      }
+
+      waitingForKeyBind = null;
+      return;
+    }
+
+    if (state.inputMode !== "morse") return;
     if (state.gameOver) return;
-    state.morseCurrent += symbol;
-    updateMorseDisplay();
+
+    const activeTag = document.activeElement ? document.activeElement.tagName : "";
+    const isTypingInField =
+      activeTag === "INPUT" || activeTag === "TEXTAREA" || document.activeElement?.isContentEditable;
+
+    if (isTypingInField) return;
+
+    if (key === state.morseDotKey) {
+      e.preventDefault();
+      state.morseCurrent += ".";
+      updateMorseDisplay();
+      return;
+    }
+
+    if (key === state.morseDashKey) {
+      e.preventDefault();
+      state.morseCurrent += "-";
+      updateMorseDisplay();
+      return;
+    }
+
+    if (key === "Enter") {
+      e.preventDefault();
+      commitMorseLetter();
+      return;
+    }
+
+    if (key === "Backspace") {
+      e.preventDefault();
+      clearCurrentMorse();
+      return;
+    }
   }
 
   function clearCurrentMorse() {
@@ -926,7 +986,7 @@
   function commitMorseLetter() {
     const code = state.morseCurrent;
     if (!code) {
-      updateStatus("Bitte zuerst Punkt und Strich eingeben.");
+      updateStatus("Bitte zuerst Morsezeichen eingeben.");
       return;
     }
 
@@ -936,13 +996,25 @@
       return;
     }
 
-    if (LETTERS.indexOf(letter) === -1) {
-      updateStatus("Erlaubt sind nur Buchstaben A bis J.");
+    if (!ALLOWED_LABELS.includes(letter)) {
+      updateStatus("Ungültiger Buchstabe.");
       return;
     }
 
     if (state.morseLetters.length >= 2) {
       updateStatus("Es sind bereits zwei Buchstaben gespeichert.");
+      return;
+    }
+
+    const pos = state.morseLetters.length;
+
+    if (pos === 0 && !ROW_LABELS.includes(letter)) {
+      updateStatus("Der erste Buchstabe muss eine Zeile von N bis Z sein.");
+      return;
+    }
+
+    if (pos === 1 && !COL_LABELS.includes(letter)) {
+      updateStatus("Der zweite Buchstabe muss eine Spalte von A bis M sein.");
       return;
     }
 
@@ -964,21 +1036,19 @@
       return;
     }
 
-    const coord = state.morseLetters.join("");
-    const parsed = parseCoordString(coord);
-
+    const parsed = parseCoordString(state.morseLetters.join(""));
     if (!parsed) {
       updateStatus("Ungültige Morse-Koordinate.");
       return;
     }
 
     setLastInput(parsed.text);
-    handlePlayerShot(parsed.row, parsed.col, parsed.text);
+    tryPlayerShotFromParsed(parsed);
     resetMorseLetters();
   }
 
   /* =========================
-     INPUT / UI
+     UI / INPUT
   ========================= */
 
   function updateInputPanels() {
@@ -997,13 +1067,8 @@
 
   function fireByText() {
     const parsed = parseCoordString(dom.coordInput.value);
-    if (!parsed) {
-      updateStatus("Bitte eine gültige Koordinate mit zwei Buchstaben eingeben, z. B. BF.");
-      return;
-    }
     dom.coordInput.value = "";
-    setLastInput(parsed.text);
-    handlePlayerShot(parsed.row, parsed.col, parsed.text);
+    tryPlayerShotFromParsed(parsed);
   }
 
   /* =========================
@@ -1037,8 +1102,8 @@
   dom.btnStartNato.addEventListener("click", startNatoRecognition);
   dom.btnStopNato.addEventListener("click", stopNatoRecognition);
 
-  dom.btnDot.addEventListener("click", () => addMorseSymbol("."));
-  dom.btnDash.addEventListener("click", () => addMorseSymbol("-"));
+  dom.btnSetDotKey.addEventListener("click", () => beginKeyBinding("dot"));
+  dom.btnSetDashKey.addEventListener("click", () => beginKeyBinding("dash"));
   dom.btnClearMorse.addEventListener("click", clearCurrentMorse);
   dom.btnCommitMorseLetter.addEventListener("click", commitMorseLetter);
   dom.btnResetMorseLetters.addEventListener("click", resetMorseLetters);
@@ -1048,9 +1113,7 @@
   dom.btnCreateAnswer.addEventListener("click", onCreateAnswer);
   dom.btnAcceptAnswer.addEventListener("click", onAcceptAnswer);
 
-  /* =========================
-     START
-  ========================= */
+  window.addEventListener("keydown", handleGlobalKeydown);
 
   initSpeechRecognition();
   resetState();
