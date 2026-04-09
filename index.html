@@ -12,9 +12,7 @@
     <div id="startOverlay" class="overlay">
       <div class="modal">
         <h1>Schiffe versenken</h1>
-        <p class="subtitle">
-          13×13 • Zeilen N–Z • Spalten A–M
-        </p>
+        <p class="subtitle">13×13 • Zeilen N–Z • Spalten A–M</p>
 
         <div class="modal-grid">
           <div>
@@ -32,6 +30,20 @@
               <option value="nato">Sprache / NATO</option>
               <option value="morse">Morse</option>
             </select>
+          </div>
+        </div>
+
+        <div id="startMorsePanel" class="start-extra hidden">
+          <div class="card">
+            <h2>Morse-Taste festlegen</h2>
+            <p class="mini">
+              Wähle genau <strong>eine</strong> Taste oder Maustaste.
+              Kurz drücken = Punkt, lang drücken = Strich.
+            </p>
+            <div class="input-row wrap">
+              <button id="btnChooseStartMorseKey" class="btn">Taste wählen</button>
+              <span class="key-display" id="startMorseKeyDisplay">-</span>
+            </div>
           </div>
         </div>
 
@@ -97,22 +109,20 @@
           <span><i class="lg hit"></i> Treffer</span>
           <span><i class="lg miss"></i> Wasser</span>
         </div>
-        <div id="playerBoard" class="board-wrap">
+        <div class="board-wrap">
           <div class="board" id="playerBoardGrid"></div>
         </div>
       </section>
 
       <section class="board-card enemy-card">
         <div class="enemy-top">
-          <div>
-            <h2>Gegnerfeld</h2>
-            <div class="legend">
-              <span>Eingabe nur über Tastatur, Sprache oder Morse</span>
-            </div>
+          <h2>Gegnerfeld</h2>
+          <div class="legend">
+            <span>Eingabe nur über Tastatur, Sprache oder Morse</span>
           </div>
         </div>
 
-        <div id="unifiedInput" class="input-box">
+        <div class="input-box">
           <div id="textInputPanel" class="input-panel">
             <label class="label" for="coordInput">Koordinate eingeben</label>
             <div class="input-row">
@@ -137,24 +147,21 @@
 
           <div id="morseInputPanel" class="input-panel hidden">
             <label class="label">Morse</label>
-
-            <div class="input-row wrap">
-              <button id="btnChooseMorseKey" class="btn">Taste wählen</button>
-              <span class="key-display" id="morseKeyDisplay">-</span>
-              <button id="btnCommitMorseLetter" class="btn">Buchstabe übernehmen</button>
-              <button id="btnClearMorse" class="btn">Zeichen löschen</button>
-              <button id="btnResetMorseLetters" class="btn">Buchstaben zurücksetzen</button>
-              <button id="btnFireMorse" class="btn primary">Schiessen</button>
-            </div>
-
             <div class="morse-display">
+              <div><strong>Morse-Taste:</strong> <span id="morseKeyDisplay">-</span></div>
               <div><strong>Aktuell:</strong> <span id="morseCurrent">-</span></div>
               <div><strong>Buchstaben:</strong> <span id="morseLetters">-</span></div>
               <div><strong>Koordinate:</strong> <span id="morseCoord">-</span></div>
             </div>
 
+            <div class="input-row wrap mt8">
+              <button id="btnClearMorse" class="btn">Zurücksetzen</button>
+            </div>
+
             <p class="mini">
-              Kurz drücken = Punkt · &nbsp;&nbsp; Lang drücken = Strich –
+              Kurz drücken = Punkt · &nbsp;&nbsp; Lang drücken = Strich –<br>
+              Pause zwischen Zeichen, längere Pause zwischen Buchstaben.<br>
+              Nach zwei Buchstaben wird automatisch geschossen.
             </p>
 
             <details class="morse-help">
@@ -168,7 +175,7 @@
           </div>
         </div>
 
-        <div id="enemyBoard" class="board-wrap">
+        <div class="board-wrap">
           <div class="board" id="enemyBoardGrid"></div>
         </div>
       </section>
