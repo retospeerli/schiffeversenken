@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Schiffe versenken</title>
+  <title>Schiffe versenken 13x13</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -11,7 +11,7 @@
     <header class="topbar">
       <div>
         <h1>Schiffe versenken</h1>
-        <p class="subtitle">10×10 • Text • NATO-Sprache • Morse • PC oder Online-Mensch</p>
+        <p class="subtitle">13×13 • Tastatur • NATO-Sprache • Morse • PC oder Online-Mensch</p>
       </div>
       <button id="btnNewGame" class="btn primary">Neues Spiel</button>
     </header>
@@ -29,7 +29,7 @@
         <div>
           <label class="label" for="inputMode">Eingabeart</label>
           <select id="inputMode">
-            <option value="text">Textfeld</option>
+            <option value="text">Tastatureingabe</option>
             <option value="nato">Spracheingabe NATO</option>
             <option value="morse">Morse-Eingabe</option>
           </select>
@@ -66,7 +66,7 @@
           </div>
         </div>
         <p class="mini muted">
-          Hinweis: Diese Online-Version funktioniert ohne Server über eine direkte Verbindung zwischen zwei Browsern.
+          Die Online-Version funktioniert serverlos über eine direkte Browser-Verbindung.
         </p>
       </div>
 
@@ -92,7 +92,7 @@
         <div class="board-card">
           <h2>Gegnerfeld</h2>
           <div class="legend">
-            <span>Klicke oder gib Koordinaten ein</span>
+            <span>Eingabe nur per Tastatur, Sprache oder Morse</span>
           </div>
           <div id="enemyBoard" class="board"></div>
         </div>
@@ -104,17 +104,19 @@
 
       <div id="textInputPanel" class="input-panel">
         <label class="label" for="coordInput">Koordinate mit zwei Buchstaben</label>
-        <input id="coordInput" type="text" maxlength="3" placeholder="z. B. BF" autocomplete="off" />
+        <input id="coordInput" type="text" maxlength="2" placeholder="z. B. QB" autocomplete="off" />
         <p class="mini">
-          Reihenfolge ist wichtig: <strong>BF</strong> ist nicht gleich <strong>FB</strong>.
-          Erst Zeile, dann Spalte.
+          Reihenfolge ist wichtig:
+          <strong>erst Zeile N–Z</strong>, dann <strong>Spalte A–M</strong>.
+          Beispiel: <strong>QB</strong>. Also nicht vertauschen.
         </p>
         <button id="btnFireText" class="btn primary">Schiessen</button>
       </div>
 
       <div id="natoInputPanel" class="input-panel hidden">
         <p class="mini">
-          Sprich zwei NATO-Wörter, z. B. <strong>Bravo Foxtrot</strong>.
+          Sprich zwei NATO-Wörter. Erst die <strong>Zeile N–Z</strong>, dann die <strong>Spalte A–M</strong>.
+          Beispiel: <strong>Quebec Bravo</strong>.
         </p>
         <div class="speech-row">
           <button id="btnStartNato" class="btn primary">NATO-Aufnahme starten</button>
@@ -128,13 +130,34 @@
 
       <div id="morseInputPanel" class="input-panel hidden">
         <p class="mini">
-          Gib nacheinander zwei Buchstaben in Morse ein. Nach jedem Buchstaben auf <strong>Buchstabe übernehmen</strong> klicken.
+          Lege zuerst eine Taste für <strong>Punkt</strong> und eine Taste für <strong>Strich</strong> fest.
+          Danach gibst du zwei Buchstaben ein:
+          zuerst die <strong>Zeile N–Z</strong>, dann die <strong>Spalte A–M</strong>.
         </p>
 
-        <div class="morse-pad">
-          <button id="btnDot" class="btn morse">· Punkt</button>
-          <button id="btnDash" class="btn morse">– Strich</button>
-          <button id="btnClearMorse" class="btn">Löschen</button>
+        <div class="grid-two">
+          <div class="card">
+            <h3>Morse-Tasten festlegen</h3>
+            <div class="morse-key-row">
+              <button id="btnSetDotKey" class="btn">Taste für Punkt wählen</button>
+              <span id="dotKeyDisplay" class="key-display">-</span>
+            </div>
+            <div class="morse-key-row">
+              <button id="btnSetDashKey" class="btn">Taste für Strich wählen</button>
+              <span id="dashKeyDisplay" class="key-display">-</span>
+            </div>
+            <p class="mini">Während der Aufnahme zählst nur du mit deinen festgelegten Tasten.</p>
+          </div>
+
+          <div class="card">
+            <h3>Morse-Steuerung</h3>
+            <div class="morse-actions">
+              <button id="btnCommitMorseLetter" class="btn">Buchstabe übernehmen</button>
+              <button id="btnClearMorse" class="btn">Aktuelles Zeichen löschen</button>
+              <button id="btnResetMorseLetters" class="btn">Buchstaben zurücksetzen</button>
+              <button id="btnFireMorse" class="btn primary">Schiessen</button>
+            </div>
+          </div>
         </div>
 
         <div class="morse-display">
@@ -143,16 +166,12 @@
           <div><strong>Koordinate:</strong> <span id="morseCoord">-</span></div>
         </div>
 
-        <div class="morse-actions">
-          <button id="btnCommitMorseLetter" class="btn">Buchstabe übernehmen</button>
-          <button id="btnResetMorseLetters" class="btn">Buchstaben zurücksetzen</button>
-          <button id="btnFireMorse" class="btn primary">Schiessen</button>
-        </div>
-
         <details class="morse-help">
-          <summary>Morse-Hilfe A–J</summary>
-          <div class="mini">
-            A .- &nbsp; B -... &nbsp; C -.-. &nbsp; D -.. &nbsp; E . &nbsp; F ..-. &nbsp; G --. &nbsp; H .... &nbsp; I .. &nbsp; J .---
+          <summary>Morse-Hilfe für A–Z</summary>
+          <div class="mini morse-grid">
+            A .- &nbsp; B -... &nbsp; C -.-. &nbsp; D -.. &nbsp; E . &nbsp; F ..-. &nbsp; G --. &nbsp; H .... &nbsp; I .. &nbsp; J .---<br>
+            K -.- &nbsp; L .-.. &nbsp; M -- &nbsp; N -. &nbsp; O --- &nbsp; P .--. &nbsp; Q --.- &nbsp; R .-. &nbsp; S ... &nbsp; T -<br>
+            U ..- &nbsp; V ...- &nbsp; W .-- &nbsp; X -..- &nbsp; Y -.-- &nbsp; Z --..
           </div>
         </details>
       </div>
@@ -161,11 +180,13 @@
     <section class="panel">
       <h2>Spielregeln</h2>
       <ul class="rules">
-        <li>Spielfeld: 10×10</li>
+        <li>Spielfeld: 13×13</li>
+        <li>Spalten: A–M</li>
+        <li>Zeilen: N–Z</li>
         <li>Schiffe sind automatisch gesetzt.</li>
         <li>Abwechselnd schiessen.</li>
-        <li>Bei einem Treffer darfst du nochmals schiessen.</li>
-        <li>Gewonnen hat, wer alle gegnerischen Schiffsfelder trifft.</li>
+        <li>Bei einem Treffer darf man nochmals schiessen.</li>
+        <li>Eingabe nur per Tastatur, Sprache oder Morse.</li>
       </ul>
     </section>
   </div>
