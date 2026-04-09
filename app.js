@@ -1,22 +1,9 @@
-/* =========================================================
-   SCHIFFE VERSENKEN 13x13
-   Zeilen: N-Z
-   Spalten: A-M
-
-   Eingabe nur über:
-   - Tastatur
-   - NATO-Spracheingabe
-   - Morse per frei definierbaren Tasten
-
-   Kein Anklicken des Spielfelds.
-========================================================= */
-
 (() => {
   const SIZE = 13;
   const COL_LABELS = "ABCDEFGHIJKLM".split("");
   const ROW_LABELS = "NOPQRSTUVWXYZ".split("");
-  const ALLOWED_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
   const SHIP_LENGTHS = [6, 5, 4, 4, 3, 3, 2];
+  const MORSE_LONG_PRESS_MS = 260;
 
   const NATO_MAP = {
     alfa: "A", alpha: "A",
@@ -77,15 +64,20 @@
   };
 
   const dom = {
-    playerBoard: document.getElementById("playerBoard"),
-    enemyBoard: document.getElementById("enemyBoard"),
+    startOverlay: document.getElementById("startOverlay"),
+    startGameMode: document.getElementById("startGameMode"),
+    startInputMode: document.getElementById("startInputMode"),
+    startOnlinePanel: document.getElementById("startOnlinePanel"),
+    btnStartGame: document.getElementById("btnStartGame"),
+
+    btnNewGame: document.getElementById("btnNewGame"),
+
     statusText: document.getElementById("statusText"),
     turnText: document.getElementById("turnText"),
     lastInputText: document.getElementById("lastInputText"),
 
-    gameMode: document.getElementById("gameMode"),
-    inputMode: document.getElementById("inputMode"),
-    btnNewGame: document.getElementById("btnNewGame"),
+    playerBoardGrid: document.getElementById("playerBoardGrid"),
+    enemyBoardGrid: document.getElementById("enemyBoardGrid"),
 
     textInputPanel: document.getElementById("textInputPanel"),
     natoInputPanel: document.getElementById("natoInputPanel"),
@@ -99,21 +91,16 @@
     speechRaw: document.getElementById("speechRaw"),
     speechCoord: document.getElementById("speechCoord"),
 
-    btnClearMorse: document.getElementById("btnClearMorse"),
+    btnChooseMorseKey: document.getElementById("btnChooseMorseKey"),
+    morseKeyDisplay: document.getElementById("morseKeyDisplay"),
     btnCommitMorseLetter: document.getElementById("btnCommitMorseLetter"),
+    btnClearMorse: document.getElementById("btnClearMorse"),
     btnResetMorseLetters: document.getElementById("btnResetMorseLetters"),
     btnFireMorse: document.getElementById("btnFireMorse"),
-
-    btnSetDotKey: document.getElementById("btnSetDotKey"),
-    btnSetDashKey: document.getElementById("btnSetDashKey"),
-    dotKeyDisplay: document.getElementById("dotKeyDisplay"),
-    dashKeyDisplay: document.getElementById("dashKeyDisplay"),
-
     morseCurrent: document.getElementById("morseCurrent"),
     morseLetters: document.getElementById("morseLetters"),
     morseCoord: document.getElementById("morseCoord"),
 
-    onlinePanel: document.getElementById("onlinePanel"),
     btnCreateOffer: document.getElementById("btnCreateOffer"),
     offerBox: document.getElementById("offerBox"),
     answerInput: document.getElementById("answerInput"),
@@ -126,6 +113,10 @@
   let state = null;
   let speechRecognition = null;
   let speechActive = false;
+  let waitingForMorseKey = false;
+  let morsePointerDownTime = null;
+  let morseListeningPointerId = null;
+  let morseRightMouseDown = false;
 
   let rtc = {
     pc: null,
@@ -133,8 +124,6 @@
     connected: false,
     role: null
   };
-
-  let waitingForKeyBind = null; // "dot" | "dash" | null
 
   function createEmptyBoard() {
     return Array.from({ length: SIZE }, () =>
@@ -158,9 +147,7 @@
   function createPlacedBoard() {
     const board = createEmptyBoard();
     const ships = [];
-    for (const len of SHIP_LENGTHS) {
-      placeShip(board, ships, len);
-    }
+    for (const len of SHIP_LENGTHS) placeShip(board, ships, len);
     return { board, ships };
   }
 
@@ -206,14 +193,14 @@
     }
   }
 
-  function resetState() {
+  function resetState(mode = "pc", inputMode = "text") {
     const player = createPlacedBoard();
     const enemy = createPlacedBoard();
 
     state = {
-      mode: dom.gameMode.value,
-      inputMode: dom.inputMode.value,
-      isOnline: dom.gameMode.value === "online",
+      mode,
+      inputMode,
+      isOnline: mode === "online",
       isHost: false,
       onlineConnected: false,
 
@@ -230,18 +217,19 @@
 
       morseCurrent: "",
       morseLetters: [],
-      morseDotKey: ".",
-      morseDashKey: "-",
+      morseTrigger: { type: "keyboard", key: " " },
 
       pcTargetStack: [],
       pcTriedShots: new Set()
     };
 
-    waitingForKeyBind = null;
-    dom.dotKeyDisplay.textContent = formatKeyLabel(state.morseDotKey);
-    dom.dashKeyDisplay.textContent = formatKeyLabel(state.morseDashKey);
+    waitingForMorseKey = false;
+    morsePointerDownTime = null;
+    morseListeningPointerId = null;
+    morseRightMouseDown = false;
 
     updateMorseDisplay();
+    updateMorseKeyDisplay();
     updateInputPanels();
     updateStatus("Neues Spiel gestartet.");
     updateTurnInfo();
@@ -253,23 +241,29 @@
     dom.statusText.textContent = text;
   }
 
-  function updateTurnInfo() {
-    if (state.gameOver) {
-      dom.turnText.textContent = "-";
-    } else {
-      dom.turnText.textContent = state.myTurn ? "Du" : "Gegner";
-    }
-  }
-
   function setLastInput(text) {
     dom.lastInputText.textContent = text;
   }
 
-  function formatKeyLabel(key) {
-    if (!key) return "-";
-    if (key === " ") return "Leertaste";
-    if (key === "Escape") return "Esc";
-    return key;
+  function updateTurnInfo() {
+    dom.turnText.textContent = state.gameOver ? "-" : (state.myTurn ? "Du" : "Gegner");
+  }
+
+  function formatTrigger(trigger) {
+    if (!trigger) return "-";
+    if (trigger.type === "keyboard") {
+      if (trigger.key === " ") return "Leertaste";
+      if (trigger.key === "Enter") return "Enter";
+      if (trigger.key === "Escape") return "Esc";
+      return `Taste: ${trigger.key}`;
+    }
+    if (trigger.type === "mouse-left") return "Maus links";
+    if (trigger.type === "mouse-right") return "Maus rechts";
+    return "-";
+  }
+
+  function updateMorseKeyDisplay() {
+    dom.morseKeyDisplay.textContent = formatTrigger(state?.morseTrigger);
   }
 
   function coordToString(row, col) {
@@ -281,11 +275,8 @@
     const cleaned = input.trim().toUpperCase().replace(/[^A-Z]/g, "");
     if (cleaned.length !== 2) return null;
 
-    const rowChar = cleaned[0];
-    const colChar = cleaned[1];
-
-    const row = ROW_LABELS.indexOf(rowChar);
-    const col = COL_LABELS.indexOf(colChar);
+    const row = ROW_LABELS.indexOf(cleaned[0]);
+    const col = COL_LABELS.indexOf(cleaned[1]);
 
     if (row === -1 || col === -1) return null;
 
@@ -294,7 +285,6 @@
 
   function parseNatoText(raw) {
     if (!raw) return null;
-
     const normalized = raw
       .toLowerCase()
       .replace(/[.,;:!?/\\]/g, " ")
@@ -305,10 +295,7 @@
     const letters = [];
 
     for (const word of words) {
-      const mapped = NATO_MAP[word];
-      if (mapped) {
-        letters.push(mapped);
-      }
+      if (NATO_MAP[word]) letters.push(NATO_MAP[word]);
       if (letters.length === 2) break;
     }
 
@@ -324,30 +311,23 @@
   }
 
   function renderBoards() {
-    renderBoard(dom.playerBoard, state.playerBoard, true);
-    renderBoard(dom.enemyBoard, state.isOnline ? state.remoteBoardShots : state.enemyBoard, false);
+    renderBoard(dom.playerBoardGrid, state.playerBoard, true);
+    renderBoard(dom.enemyBoardGrid, state.isOnline ? state.remoteBoardShots : state.enemyBoard, false);
   }
 
   function renderBoard(target, board, revealShips) {
     target.innerHTML = "";
-
     target.appendChild(makeHead(""));
-    for (let c = 0; c < SIZE; c++) {
-      target.appendChild(makeHead(COL_LABELS[c]));
-    }
+    for (let c = 0; c < SIZE; c++) target.appendChild(makeHead(COL_LABELS[c]));
 
     for (let r = 0; r < SIZE; r++) {
       target.appendChild(makeHead(ROW_LABELS[r]));
-
       for (let c = 0; c < SIZE; c++) {
         const cell = board[r][c];
         const el = document.createElement("div");
         el.className = "cell";
 
-        if (revealShips && cell.ship) {
-          el.classList.add("ship");
-        }
-
+        if (revealShips && cell.ship) el.classList.add("ship");
         if (cell.hit) {
           el.classList.add("hit");
           el.textContent = "X";
@@ -390,7 +370,6 @@
         valid: true,
         hit: true,
         sunk: ship.sunk,
-        shipLen: ship.len,
         allSunk: ships.every(s => s.sunk)
       };
     }
@@ -430,6 +409,7 @@
     }
 
     const result = fireAtBoard(state.enemyBoard, state.enemyShips, row, col);
+
     if (!result.valid) {
       updateStatus(result.message);
       renderBoards();
@@ -451,7 +431,6 @@
       state.gameOver = true;
       updateStatus("Du hast gewonnen!");
       updateTurnInfo();
-      renderBoards();
       return;
     }
 
@@ -490,10 +469,8 @@
     for (const item of candidates) {
       if (!inBounds(item.row, item.col)) continue;
       const key = `${item.row},${item.col}`;
-      if (!state.pcTriedShots.has(key)) {
-        if (!state.pcTargetStack.some(x => x.row === item.row && x.col === item.col)) {
-          state.pcTargetStack.push(item);
-        }
+      if (!state.pcTriedShots.has(key) && !state.pcTargetStack.some(x => x.row === item.row && x.col === item.col)) {
+        state.pcTargetStack.push(item);
       }
     }
   }
@@ -506,7 +483,6 @@
     const coordText = coordToString(row, col);
 
     state.pcTriedShots.add(`${row},${col}`);
-
     const result = fireAtBoard(state.playerBoard, state.playerShips, row, col);
 
     if (!result.valid) {
@@ -543,9 +519,287 @@
     }
   }
 
-  /* =========================
-     ONLINE / WEBRTC
-  ========================= */
+  function updateInputPanels() {
+    dom.textInputPanel.classList.add("hidden");
+    dom.natoInputPanel.classList.add("hidden");
+    dom.morseInputPanel.classList.add("hidden");
+
+    if (state.inputMode === "text") dom.textInputPanel.classList.remove("hidden");
+    if (state.inputMode === "nato") dom.natoInputPanel.classList.remove("hidden");
+    if (state.inputMode === "morse") dom.morseInputPanel.classList.remove("hidden");
+  }
+
+  function fireByText() {
+    const parsed = parseCoordString(dom.coordInput.value);
+    dom.coordInput.value = "";
+    tryPlayerShotFromParsed(parsed);
+  }
+
+  function initSpeechRecognition() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      dom.speechRaw.textContent = "Spracherkennung wird in diesem Browser nicht unterstützt.";
+      dom.btnStartNato.disabled = true;
+      dom.btnStopNato.disabled = true;
+      return;
+    }
+
+    speechRecognition = new SR();
+    speechRecognition.lang = "de-CH";
+    speechRecognition.continuous = true;
+    speechRecognition.interimResults = true;
+
+    let finalTranscript = "";
+
+    speechRecognition.onstart = () => {
+      speechActive = true;
+      finalTranscript = "";
+      dom.speechRaw.textContent = "Aufnahme läuft …";
+      dom.speechCoord.textContent = "-";
+      updateStatus("NATO-Aufnahme läuft.");
+    };
+
+    speechRecognition.onresult = (event) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const txt = event.results[i][0].transcript;
+        if (event.results[i].isFinal) finalTranscript += " " + txt;
+        else interim += " " + txt;
+      }
+
+      const full = (finalTranscript + " " + interim).trim();
+      dom.speechRaw.textContent = full || "-";
+
+      const parsed = parseNatoText(full);
+      dom.speechCoord.textContent = parsed ? parsed.text : "-";
+    };
+
+    speechRecognition.onerror = (event) => {
+      updateStatus(`Spracherkennung-Fehler: ${event.error}`);
+    };
+
+    speechRecognition.onend = () => {
+      speechActive = false;
+      const raw = dom.speechRaw.textContent;
+      const parsed = parseNatoText(raw);
+
+      if (parsed && state.myTurn && !state.gameOver) {
+        handlePlayerShot(parsed.row, parsed.col, parsed.text);
+        setLastInput(parsed.text);
+      } else if (raw && raw !== "-" && !parsed) {
+        updateStatus("Keine gültige NATO-Koordinate erkannt.");
+      }
+    };
+  }
+
+  function startNatoRecognition() {
+    if (!speechRecognition || speechActive) return;
+    try {
+      dom.speechRaw.textContent = "-";
+      dom.speechCoord.textContent = "-";
+      speechRecognition.start();
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  function stopNatoRecognition() {
+    if (!speechRecognition || !speechActive) return;
+    speechRecognition.stop();
+  }
+
+  function updateMorseDisplay() {
+    dom.morseCurrent.textContent = state?.morseCurrent || "-";
+    dom.morseLetters.textContent = state?.morseLetters?.length ? state.morseLetters.join(" ") : "-";
+    dom.morseCoord.textContent = state?.morseLetters?.length === 2 ? state.morseLetters.join("") : "-";
+  }
+
+  function beginChooseMorseKey() {
+    waitingForMorseKey = true;
+    updateStatus("Taste wählen: Drücke jetzt die gewünschte Taste oder Maus links / rechts.");
+  }
+
+  function registerMorseSymbolFromDuration(durationMs) {
+    if (state.inputMode !== "morse" || state.gameOver) return;
+    const symbol = durationMs >= MORSE_LONG_PRESS_MS ? "-" : ".";
+    state.morseCurrent += symbol;
+    updateMorseDisplay();
+    updateStatus(symbol === "." ? "Punkt erkannt." : "Strich erkannt.");
+  }
+
+  function clearCurrentMorse() {
+    state.morseCurrent = "";
+    updateMorseDisplay();
+  }
+
+  function commitMorseLetter() {
+    const code = state.morseCurrent;
+    if (!code) {
+      updateStatus("Bitte zuerst morsen.");
+      return;
+    }
+
+    const letter = MORSE_TO_LETTER[code];
+    if (!letter) {
+      updateStatus("Dieses Morsezeichen ist ungültig.");
+      return;
+    }
+
+    if (state.morseLetters.length >= 2) {
+      updateStatus("Es sind bereits zwei Buchstaben gespeichert.");
+      return;
+    }
+
+    const pos = state.morseLetters.length;
+
+    if (pos === 0 && !ROW_LABELS.includes(letter)) {
+      updateStatus("Der erste Buchstabe muss eine Zeile von N bis Z sein.");
+      return;
+    }
+
+    if (pos === 1 && !COL_LABELS.includes(letter)) {
+      updateStatus("Der zweite Buchstabe muss eine Spalte von A bis M sein.");
+      return;
+    }
+
+    state.morseLetters.push(letter);
+    state.morseCurrent = "";
+    updateMorseDisplay();
+    updateStatus(`Morse-Buchstabe erkannt: ${letter}`);
+  }
+
+  function resetMorseLetters() {
+    state.morseCurrent = "";
+    state.morseLetters = [];
+    updateMorseDisplay();
+  }
+
+  function fireByMorse() {
+    if (state.morseLetters.length !== 2) {
+      updateStatus("Bitte genau zwei Morse-Buchstaben eingeben.");
+      return;
+    }
+
+    const parsed = parseCoordString(state.morseLetters.join(""));
+    if (!parsed) {
+      updateStatus("Ungültige Morse-Koordinate.");
+      return;
+    }
+
+    setLastInput(parsed.text);
+    tryPlayerShotFromParsed(parsed);
+    resetMorseLetters();
+  }
+
+  function activeElementIsTypingField() {
+    const el = document.activeElement;
+    if (!el) return false;
+    const tag = el.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
+  }
+
+  function triggerMatchesKeyboardEvent(trigger, e) {
+    return trigger && trigger.type === "keyboard" && e.key === trigger.key;
+  }
+
+  function onGlobalKeyDown(e) {
+    if (waitingForMorseKey) {
+      e.preventDefault();
+      state.morseTrigger = { type: "keyboard", key: e.key };
+      waitingForMorseKey = false;
+      updateMorseKeyDisplay();
+      updateStatus(`Morse-Taste gesetzt: ${formatTrigger(state.morseTrigger)}`);
+      return;
+    }
+
+    if (!state || state.inputMode !== "morse" || state.gameOver) return;
+    if (activeElementIsTypingField()) return;
+
+    if (triggerMatchesKeyboardEvent(state.morseTrigger, e) && morsePointerDownTime === null) {
+      e.preventDefault();
+      morsePointerDownTime = performance.now();
+      return;
+    }
+
+    if (e.key === "Enter" && state.morseTrigger?.type !== "keyboard") {
+      // normale Zusatzfunktion nur wenn Enter nicht als Morse-Taste benutzt wird
+    }
+
+    if (e.key === "Backspace") {
+      e.preventDefault();
+      clearCurrentMorse();
+    }
+  }
+
+  function onGlobalKeyUp(e) {
+    if (!state || state.inputMode !== "morse" || state.gameOver) return;
+
+    if (triggerMatchesKeyboardEvent(state.morseTrigger, e) && morsePointerDownTime !== null) {
+      e.preventDefault();
+      const duration = performance.now() - morsePointerDownTime;
+      morsePointerDownTime = null;
+      registerMorseSymbolFromDuration(duration);
+    }
+  }
+
+  function onGlobalPointerDown(e) {
+    if (!state) return;
+
+    if (waitingForMorseKey) {
+      if (e.button === 0) {
+        state.morseTrigger = { type: "mouse-left" };
+        waitingForMorseKey = false;
+        updateMorseKeyDisplay();
+        updateStatus("Morse-Taste gesetzt: Maus links");
+        return;
+      }
+      if (e.button === 2) {
+        state.morseTrigger = { type: "mouse-right" };
+        waitingForMorseKey = false;
+        updateMorseKeyDisplay();
+        updateStatus("Morse-Taste gesetzt: Maus rechts");
+        return;
+      }
+    }
+
+    if (state.inputMode !== "morse" || state.gameOver) return;
+
+    if (state.morseTrigger?.type === "mouse-left" && e.button === 0 && morsePointerDownTime === null) {
+      morseListeningPointerId = e.pointerId;
+      morsePointerDownTime = performance.now();
+    }
+
+    if (state.morseTrigger?.type === "mouse-right" && e.button === 2 && !morseRightMouseDown) {
+      morseRightMouseDown = true;
+      morsePointerDownTime = performance.now();
+    }
+  }
+
+  function onGlobalPointerUp(e) {
+    if (!state || state.inputMode !== "morse" || state.gameOver) return;
+
+    if (state.morseTrigger?.type === "mouse-left" && e.button === 0 && morsePointerDownTime !== null) {
+      if (morseListeningPointerId === e.pointerId) {
+        const duration = performance.now() - morsePointerDownTime;
+        morsePointerDownTime = null;
+        morseListeningPointerId = null;
+        registerMorseSymbolFromDuration(duration);
+      }
+    }
+
+    if (state.morseTrigger?.type === "mouse-right" && e.button === 2 && morsePointerDownTime !== null && morseRightMouseDown) {
+      const duration = performance.now() - morsePointerDownTime;
+      morsePointerDownTime = null;
+      morseRightMouseDown = false;
+      registerMorseSymbolFromDuration(duration);
+    }
+  }
+
+  function onContextMenu(e) {
+    if (waitingForMorseKey || state?.morseTrigger?.type === "mouse-right") {
+      e.preventDefault();
+    }
+  }
 
   async function createPeerConnection() {
     cleanupRTC();
@@ -788,7 +1042,6 @@
       state.gameOver = true;
       updateStatus("Du hast verloren.");
       updateTurnInfo();
-
       sendOnlineMessage({
         type: "gameOver",
         payload: { message: "Du hast gewonnen." }
@@ -825,287 +1078,43 @@
     updateTurnInfo();
   }
 
-  /* =========================
-     NATO-SPRACHE
-  ========================= */
-
-  function initSpeechRecognition() {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      dom.speechRaw.textContent = "Spracherkennung wird in diesem Browser nicht unterstützt.";
-      dom.btnStartNato.disabled = true;
-      dom.btnStopNato.disabled = true;
-      return;
-    }
-
-    speechRecognition = new SR();
-    speechRecognition.lang = "de-CH";
-    speechRecognition.continuous = true;
-    speechRecognition.interimResults = true;
-
-    let finalTranscript = "";
-
-    speechRecognition.onstart = () => {
-      speechActive = true;
-      finalTranscript = "";
-      dom.speechRaw.textContent = "Aufnahme läuft …";
-      dom.speechCoord.textContent = "-";
-      updateStatus("NATO-Aufnahme läuft.");
-    };
-
-    speechRecognition.onresult = (event) => {
-      let interim = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const txt = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscript += " " + txt;
-        } else {
-          interim += " " + txt;
-        }
-      }
-
-      const full = (finalTranscript + " " + interim).trim();
-      dom.speechRaw.textContent = full || "-";
-
-      const parsed = parseNatoText(full);
-      dom.speechCoord.textContent = parsed ? parsed.text : "-";
-    };
-
-    speechRecognition.onerror = (event) => {
-      updateStatus(`Spracherkennung-Fehler: ${event.error}`);
-    };
-
-    speechRecognition.onend = () => {
-      speechActive = false;
-      const raw = dom.speechRaw.textContent;
-      const parsed = parseNatoText(raw);
-
-      if (parsed && state.myTurn && !state.gameOver) {
-        setLastInput(parsed.text);
-        handlePlayerShot(parsed.row, parsed.col, parsed.text);
-      } else if (raw && raw !== "-" && !parsed) {
-        updateStatus("Keine gültige NATO-Koordinate erkannt.");
-      }
-    };
+  function showStartOnlinePanel() {
+    dom.startOnlinePanel.classList.toggle("hidden", dom.startGameMode.value !== "online");
   }
 
-  function startNatoRecognition() {
-    if (!speechRecognition || speechActive) return;
-    try {
-      dom.speechRaw.textContent = "-";
-      dom.speechCoord.textContent = "-";
-      speechRecognition.start();
-    } catch (err) {
-      console.error(err);
+  function startGameFromOverlay() {
+    const mode = dom.startGameMode.value;
+    const inputMode = dom.startInputMode.value;
+    resetState(mode, inputMode);
+    dom.startOverlay.classList.add("hidden");
+
+    if (inputMode === "text") {
+      setTimeout(() => dom.coordInput.focus(), 50);
     }
   }
 
-  function stopNatoRecognition() {
-    if (!speechRecognition || !speechActive) return;
-    speechRecognition.stop();
-  }
-
-  /* =========================
-     MORSE
-  ========================= */
-
-  function updateMorseDisplay() {
-    dom.morseCurrent.textContent = state.morseCurrent || "-";
-    dom.morseLetters.textContent = state.morseLetters.length ? state.morseLetters.join(" ") : "-";
-    dom.morseCoord.textContent = state.morseLetters.length === 2 ? state.morseLetters.join("") : "-";
-  }
-
-  function beginKeyBinding(which) {
-    waitingForKeyBind = which;
-    updateStatus(which === "dot"
-      ? "Drücke jetzt die gewünschte Taste für Punkt."
-      : "Drücke jetzt die gewünschte Taste für Strich.");
-  }
-
-  function handleGlobalKeydown(e) {
-    const key = e.key;
-
-    if (waitingForKeyBind) {
-      e.preventDefault();
-
-      if (waitingForKeyBind === "dot") {
-        state.morseDotKey = key;
-        dom.dotKeyDisplay.textContent = formatKeyLabel(key);
-        updateStatus(`Taste für Punkt gesetzt: ${formatKeyLabel(key)}`);
-      } else if (waitingForKeyBind === "dash") {
-        state.morseDashKey = key;
-        dom.dashKeyDisplay.textContent = formatKeyLabel(key);
-        updateStatus(`Taste für Strich gesetzt: ${formatKeyLabel(key)}`);
-      }
-
-      waitingForKeyBind = null;
-      return;
-    }
-
-    if (state.inputMode !== "morse") return;
-    if (state.gameOver) return;
-
-    const activeTag = document.activeElement ? document.activeElement.tagName : "";
-    const isTypingInField =
-      activeTag === "INPUT" || activeTag === "TEXTAREA" || document.activeElement?.isContentEditable;
-
-    if (isTypingInField) return;
-
-    if (key === state.morseDotKey) {
-      e.preventDefault();
-      state.morseCurrent += ".";
-      updateMorseDisplay();
-      return;
-    }
-
-    if (key === state.morseDashKey) {
-      e.preventDefault();
-      state.morseCurrent += "-";
-      updateMorseDisplay();
-      return;
-    }
-
-    if (key === "Enter") {
-      e.preventDefault();
-      commitMorseLetter();
-      return;
-    }
-
-    if (key === "Backspace") {
-      e.preventDefault();
-      clearCurrentMorse();
-      return;
-    }
-  }
-
-  function clearCurrentMorse() {
-    state.morseCurrent = "";
-    updateMorseDisplay();
-  }
-
-  function commitMorseLetter() {
-    const code = state.morseCurrent;
-    if (!code) {
-      updateStatus("Bitte zuerst Morsezeichen eingeben.");
-      return;
-    }
-
-    const letter = MORSE_TO_LETTER[code];
-    if (!letter) {
-      updateStatus("Dieses Morsezeichen ist ungültig.");
-      return;
-    }
-
-    if (!ALLOWED_LABELS.includes(letter)) {
-      updateStatus("Ungültiger Buchstabe.");
-      return;
-    }
-
-    if (state.morseLetters.length >= 2) {
-      updateStatus("Es sind bereits zwei Buchstaben gespeichert.");
-      return;
-    }
-
-    const pos = state.morseLetters.length;
-
-    if (pos === 0 && !ROW_LABELS.includes(letter)) {
-      updateStatus("Der erste Buchstabe muss eine Zeile von N bis Z sein.");
-      return;
-    }
-
-    if (pos === 1 && !COL_LABELS.includes(letter)) {
-      updateStatus("Der zweite Buchstabe muss eine Spalte von A bis M sein.");
-      return;
-    }
-
-    state.morseLetters.push(letter);
-    state.morseCurrent = "";
-    updateMorseDisplay();
-    updateStatus(`Morse-Buchstabe erkannt: ${letter}`);
-  }
-
-  function resetMorseLetters() {
-    state.morseCurrent = "";
-    state.morseLetters = [];
-    updateMorseDisplay();
-  }
-
-  function fireByMorse() {
-    if (state.morseLetters.length !== 2) {
-      updateStatus("Bitte genau zwei Morse-Buchstaben eingeben.");
-      return;
-    }
-
-    const parsed = parseCoordString(state.morseLetters.join(""));
-    if (!parsed) {
-      updateStatus("Ungültige Morse-Koordinate.");
-      return;
-    }
-
-    setLastInput(parsed.text);
-    tryPlayerShotFromParsed(parsed);
-    resetMorseLetters();
-  }
-
-  /* =========================
-     UI / INPUT
-  ========================= */
-
-  function updateInputPanels() {
-    state.inputMode = dom.inputMode.value;
-
-    dom.textInputPanel.classList.add("hidden");
-    dom.natoInputPanel.classList.add("hidden");
-    dom.morseInputPanel.classList.add("hidden");
-
-    if (state.inputMode === "text") dom.textInputPanel.classList.remove("hidden");
-    if (state.inputMode === "nato") dom.natoInputPanel.classList.remove("hidden");
-    if (state.inputMode === "morse") dom.morseInputPanel.classList.remove("hidden");
-
-    dom.onlinePanel.classList.toggle("hidden", dom.gameMode.value !== "online");
-  }
-
-  function fireByText() {
-    const parsed = parseCoordString(dom.coordInput.value);
-    dom.coordInput.value = "";
-    tryPlayerShotFromParsed(parsed);
-  }
-
-  /* =========================
-     EVENTS
-  ========================= */
-
-  dom.btnNewGame.addEventListener("click", () => {
+  function reopenStartOverlay() {
     stopNatoRecognition();
     cleanupRTC();
-    resetState();
-  });
+    dom.startOverlay.classList.remove("hidden");
+    showStartOnlinePanel();
+  }
 
-  dom.gameMode.addEventListener("change", () => {
-    stopNatoRecognition();
-    cleanupRTC();
-    resetState();
-  });
-
-  dom.inputMode.addEventListener("change", () => {
-    updateInputPanels();
-  });
+  dom.startGameMode.addEventListener("change", showStartOnlinePanel);
+  dom.btnStartGame.addEventListener("click", startGameFromOverlay);
+  dom.btnNewGame.addEventListener("click", reopenStartOverlay);
 
   dom.btnFireText.addEventListener("click", fireByText);
-
   dom.coordInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      fireByText();
-    }
+    if (e.key === "Enter") fireByText();
   });
 
   dom.btnStartNato.addEventListener("click", startNatoRecognition);
   dom.btnStopNato.addEventListener("click", stopNatoRecognition);
 
-  dom.btnSetDotKey.addEventListener("click", () => beginKeyBinding("dot"));
-  dom.btnSetDashKey.addEventListener("click", () => beginKeyBinding("dash"));
-  dom.btnClearMorse.addEventListener("click", clearCurrentMorse);
+  dom.btnChooseMorseKey.addEventListener("click", beginChooseMorseKey);
   dom.btnCommitMorseLetter.addEventListener("click", commitMorseLetter);
+  dom.btnClearMorse.addEventListener("click", clearCurrentMorse);
   dom.btnResetMorseLetters.addEventListener("click", resetMorseLetters);
   dom.btnFireMorse.addEventListener("click", fireByMorse);
 
@@ -1113,8 +1122,13 @@
   dom.btnCreateAnswer.addEventListener("click", onCreateAnswer);
   dom.btnAcceptAnswer.addEventListener("click", onAcceptAnswer);
 
-  window.addEventListener("keydown", handleGlobalKeydown);
+  window.addEventListener("keydown", onGlobalKeyDown);
+  window.addEventListener("keyup", onGlobalKeyUp);
+  window.addEventListener("pointerdown", onGlobalPointerDown);
+  window.addEventListener("pointerup", onGlobalPointerUp);
+  window.addEventListener("contextmenu", onContextMenu);
 
   initSpeechRecognition();
-  resetState();
+  resetState("pc", "text");
+  showStartOnlinePanel();
 })();
