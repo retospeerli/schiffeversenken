@@ -8,187 +8,171 @@
 </head>
 <body>
   <div class="app">
+
+    <div id="startOverlay" class="overlay">
+      <div class="modal">
+        <h1>Schiffe versenken</h1>
+        <p class="subtitle">
+          13×13 • Zeilen N–Z • Spalten A–M
+        </p>
+
+        <div class="modal-grid">
+          <div>
+            <label class="label" for="startGameMode">Spielmodus</label>
+            <select id="startGameMode">
+              <option value="pc">Gegen PC</option>
+              <option value="online">Gegen Mensch online</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="label" for="startInputMode">Eingabeart</label>
+            <select id="startInputMode">
+              <option value="text">Tastatur</option>
+              <option value="nato">Sprache / NATO</option>
+              <option value="morse">Morse</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="startOnlinePanel" class="online-panel hidden">
+          <div class="modal-grid">
+            <div class="card">
+              <h2>Host</h2>
+              <p>1. Angebot erstellen</p>
+              <p>2. Angebot an Mitspieler senden</p>
+              <p>3. Antwort einfügen</p>
+              <button id="btnCreateOffer" class="btn">Angebot erstellen</button>
+
+              <label class="label mt8" for="offerBox">Mein Angebot</label>
+              <textarea id="offerBox" rows="5" readonly></textarea>
+
+              <label class="label mt8" for="answerInput">Antwort des Mitspielers</label>
+              <textarea id="answerInput" rows="5"></textarea>
+              <button id="btnAcceptAnswer" class="btn mt8">Antwort übernehmen</button>
+            </div>
+
+            <div class="card">
+              <h2>Gast</h2>
+              <p>1. Angebot vom Host einfügen</p>
+              <p>2. Antwort erzeugen</p>
+              <p>3. Antwort an Host senden</p>
+
+              <label class="label" for="offerInput">Angebot vom Host</label>
+              <textarea id="offerInput" rows="5"></textarea>
+              <button id="btnCreateAnswer" class="btn mt8">Antwort erzeugen</button>
+
+              <label class="label mt8" for="answerBox">Meine Antwort</label>
+              <textarea id="answerBox" rows="5" readonly></textarea>
+            </div>
+          </div>
+          <p class="mini muted">Die Online-Verbindung läuft direkt zwischen zwei Browsern.</p>
+        </div>
+
+        <div class="modal-actions">
+          <button id="btnStartGame" class="btn primary">Spiel starten</button>
+        </div>
+      </div>
+    </div>
+
     <header class="topbar">
       <div>
         <h1>Schiffe versenken</h1>
-        <p class="subtitle">13×13 • Tastatur • NATO-Sprache • Morse • PC oder Online-Mensch</p>
+        <p class="subtitle">13×13 • Zeilen N–Z • Spalten A–M</p>
       </div>
       <button id="btnNewGame" class="btn primary">Neues Spiel</button>
     </header>
 
-    <section class="panel">
-      <div class="grid-two">
-        <div>
-          <label class="label" for="gameMode">Spielmodus</label>
-          <select id="gameMode">
-            <option value="pc">Gegen PC</option>
-            <option value="online">Gegen Mensch online</option>
-          </select>
-        </div>
-
-        <div>
-          <label class="label" for="inputMode">Eingabeart</label>
-          <select id="inputMode">
-            <option value="text">Tastatureingabe</option>
-            <option value="nato">Spracheingabe NATO</option>
-            <option value="morse">Morse-Eingabe</option>
-          </select>
-        </div>
-      </div>
-
-      <div id="onlinePanel" class="online-panel hidden">
-        <div class="grid-two">
-          <div class="card">
-            <h2>Host</h2>
-            <p>1. Auf <strong>Angebot erstellen</strong> klicken.</p>
-            <p>2. Den Text an den Mitspieler senden.</p>
-            <p>3. Die Antwort des Mitspielers unten einfügen.</p>
-            <button id="btnCreateOffer" class="btn">Angebot erstellen</button>
-            <label class="label mt8" for="offerBox">Mein Angebot</label>
-            <textarea id="offerBox" rows="6" readonly></textarea>
-
-            <label class="label mt8" for="answerInput">Antwort des Mitspielers einfügen</label>
-            <textarea id="answerInput" rows="6"></textarea>
-            <button id="btnAcceptAnswer" class="btn mt8">Antwort übernehmen</button>
-          </div>
-
-          <div class="card">
-            <h2>Gast</h2>
-            <p>1. Angebot des Hosts unten einfügen.</p>
-            <p>2. Auf <strong>Antwort erzeugen</strong> klicken.</p>
-            <p>3. Die Antwort an den Host senden.</p>
-            <label class="label" for="offerInput">Angebot vom Host</label>
-            <textarea id="offerInput" rows="6"></textarea>
-            <button id="btnCreateAnswer" class="btn mt8">Antwort erzeugen</button>
-
-            <label class="label mt8" for="answerBox">Meine Antwort</label>
-            <textarea id="answerBox" rows="6" readonly></textarea>
-          </div>
-        </div>
-        <p class="mini muted">
-          Die Online-Version funktioniert serverlos über eine direkte Browser-Verbindung.
-        </p>
-      </div>
-
-      <div class="status-row">
-        <div class="status-item"><strong>Status:</strong> <span id="statusText">Bereit.</span></div>
-        <div class="status-item"><strong>Am Zug:</strong> <span id="turnText">-</span></div>
-        <div class="status-item"><strong>Letzte Eingabe:</strong> <span id="lastInputText">-</span></div>
-      </div>
+    <section class="statusbar">
+      <div class="status-item"><strong>Status:</strong> <span id="statusText">Bereit.</span></div>
+      <div class="status-item"><strong>Am Zug:</strong> <span id="turnText">-</span></div>
+      <div class="status-item"><strong>Letzte Eingabe:</strong> <span id="lastInputText">-</span></div>
     </section>
 
-    <section class="panel">
-      <div class="grid-two boards">
-        <div class="board-card">
-          <h2>Dein Feld</h2>
-          <div class="legend">
-            <span><i class="lg ship"></i> Schiff</span>
-            <span><i class="lg hit"></i> Treffer</span>
-            <span><i class="lg miss"></i> Wasser</span>
-          </div>
-          <div id="playerBoard" class="board"></div>
+    <main class="game-layout">
+      <section class="board-card">
+        <h2>Dein Feld</h2>
+        <div class="legend">
+          <span><i class="lg ship"></i> Schiff</span>
+          <span><i class="lg hit"></i> Treffer</span>
+          <span><i class="lg miss"></i> Wasser</span>
         </div>
-
-        <div class="board-card">
-          <h2>Gegnerfeld</h2>
-          <div class="legend">
-            <span>Eingabe nur per Tastatur, Sprache oder Morse</span>
-          </div>
-          <div id="enemyBoard" class="board"></div>
+        <div id="playerBoard" class="board-wrap">
+          <div class="board" id="playerBoardGrid"></div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section class="panel">
-      <h2>Eingabe</h2>
-
-      <div id="textInputPanel" class="input-panel">
-        <label class="label" for="coordInput">Koordinate mit zwei Buchstaben</label>
-        <input id="coordInput" type="text" maxlength="2" placeholder="z. B. QB" autocomplete="off" />
-        <p class="mini">
-          Reihenfolge ist wichtig:
-          <strong>erst Zeile N–Z</strong>, dann <strong>Spalte A–M</strong>.
-          Beispiel: <strong>QB</strong>. Also nicht vertauschen.
-        </p>
-        <button id="btnFireText" class="btn primary">Schiessen</button>
-      </div>
-
-      <div id="natoInputPanel" class="input-panel hidden">
-        <p class="mini">
-          Sprich zwei NATO-Wörter. Erst die <strong>Zeile N–Z</strong>, dann die <strong>Spalte A–M</strong>.
-          Beispiel: <strong>Quebec Bravo</strong>.
-        </p>
-        <div class="speech-row">
-          <button id="btnStartNato" class="btn primary">NATO-Aufnahme starten</button>
-          <button id="btnStopNato" class="btn">Stoppen</button>
-        </div>
-        <div class="speech-box">
-          <div><strong>Erkannt:</strong> <span id="speechRaw">-</span></div>
-          <div><strong>Koordinate:</strong> <span id="speechCoord">-</span></div>
-        </div>
-      </div>
-
-      <div id="morseInputPanel" class="input-panel hidden">
-        <p class="mini">
-          Lege zuerst eine Taste für <strong>Punkt</strong> und eine Taste für <strong>Strich</strong> fest.
-          Danach gibst du zwei Buchstaben ein:
-          zuerst die <strong>Zeile N–Z</strong>, dann die <strong>Spalte A–M</strong>.
-        </p>
-
-        <div class="grid-two">
-          <div class="card">
-            <h3>Morse-Tasten festlegen</h3>
-            <div class="morse-key-row">
-              <button id="btnSetDotKey" class="btn">Taste für Punkt wählen</button>
-              <span id="dotKeyDisplay" class="key-display">-</span>
+      <section class="board-card enemy-card">
+        <div class="enemy-top">
+          <div>
+            <h2>Gegnerfeld</h2>
+            <div class="legend">
+              <span>Eingabe nur über Tastatur, Sprache oder Morse</span>
             </div>
-            <div class="morse-key-row">
-              <button id="btnSetDashKey" class="btn">Taste für Strich wählen</button>
-              <span id="dashKeyDisplay" class="key-display">-</span>
+          </div>
+        </div>
+
+        <div id="unifiedInput" class="input-box">
+          <div id="textInputPanel" class="input-panel">
+            <label class="label" for="coordInput">Koordinate eingeben</label>
+            <div class="input-row">
+              <input id="coordInput" type="text" maxlength="2" placeholder="z. B. QB" autocomplete="off" />
+              <button id="btnFireText" class="btn primary">Schiessen</button>
             </div>
-            <p class="mini">Während der Aufnahme zählst nur du mit deinen festgelegten Tasten.</p>
+            <p class="mini">Erst Zeile N–Z, dann Spalte A–M.</p>
           </div>
 
-          <div class="card">
-            <h3>Morse-Steuerung</h3>
-            <div class="morse-actions">
+          <div id="natoInputPanel" class="input-panel hidden">
+            <label class="label">NATO-Spracheingabe</label>
+            <div class="input-row">
+              <button id="btnStartNato" class="btn primary">Aufnahme starten</button>
+              <button id="btnStopNato" class="btn">Stoppen</button>
+            </div>
+            <div class="speech-box">
+              <div><strong>Erkannt:</strong> <span id="speechRaw">-</span></div>
+              <div><strong>Koordinate:</strong> <span id="speechCoord">-</span></div>
+            </div>
+            <p class="mini">Beispiel: Quebec Bravo</p>
+          </div>
+
+          <div id="morseInputPanel" class="input-panel hidden">
+            <label class="label">Morse</label>
+
+            <div class="input-row wrap">
+              <button id="btnChooseMorseKey" class="btn">Taste wählen</button>
+              <span class="key-display" id="morseKeyDisplay">-</span>
               <button id="btnCommitMorseLetter" class="btn">Buchstabe übernehmen</button>
-              <button id="btnClearMorse" class="btn">Aktuelles Zeichen löschen</button>
+              <button id="btnClearMorse" class="btn">Zeichen löschen</button>
               <button id="btnResetMorseLetters" class="btn">Buchstaben zurücksetzen</button>
               <button id="btnFireMorse" class="btn primary">Schiessen</button>
             </div>
+
+            <div class="morse-display">
+              <div><strong>Aktuell:</strong> <span id="morseCurrent">-</span></div>
+              <div><strong>Buchstaben:</strong> <span id="morseLetters">-</span></div>
+              <div><strong>Koordinate:</strong> <span id="morseCoord">-</span></div>
+            </div>
+
+            <p class="mini">
+              Kurz drücken = Punkt · &nbsp;&nbsp; Lang drücken = Strich –
+            </p>
+
+            <details class="morse-help">
+              <summary>Morse-Hilfe A–Z</summary>
+              <div class="mini morse-grid">
+                A .- &nbsp; B -... &nbsp; C -.-. &nbsp; D -.. &nbsp; E . &nbsp; F ..-. &nbsp; G --. &nbsp; H .... &nbsp; I .. &nbsp; J .---<br>
+                K -.- &nbsp; L .-.. &nbsp; M -- &nbsp; N -. &nbsp; O --- &nbsp; P .--. &nbsp; Q --.- &nbsp; R .-. &nbsp; S ... &nbsp; T -<br>
+                U ..- &nbsp; V ...- &nbsp; W .-- &nbsp; X -..- &nbsp; Y -.-- &nbsp; Z --..
+              </div>
+            </details>
           </div>
         </div>
 
-        <div class="morse-display">
-          <div><strong>Aktuell:</strong> <span id="morseCurrent">-</span></div>
-          <div><strong>Buchstaben:</strong> <span id="morseLetters">-</span></div>
-          <div><strong>Koordinate:</strong> <span id="morseCoord">-</span></div>
+        <div id="enemyBoard" class="board-wrap">
+          <div class="board" id="enemyBoardGrid"></div>
         </div>
-
-        <details class="morse-help">
-          <summary>Morse-Hilfe für A–Z</summary>
-          <div class="mini morse-grid">
-            A .- &nbsp; B -... &nbsp; C -.-. &nbsp; D -.. &nbsp; E . &nbsp; F ..-. &nbsp; G --. &nbsp; H .... &nbsp; I .. &nbsp; J .---<br>
-            K -.- &nbsp; L .-.. &nbsp; M -- &nbsp; N -. &nbsp; O --- &nbsp; P .--. &nbsp; Q --.- &nbsp; R .-. &nbsp; S ... &nbsp; T -<br>
-            U ..- &nbsp; V ...- &nbsp; W .-- &nbsp; X -..- &nbsp; Y -.-- &nbsp; Z --..
-          </div>
-        </details>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2>Spielregeln</h2>
-      <ul class="rules">
-        <li>Spielfeld: 13×13</li>
-        <li>Spalten: A–M</li>
-        <li>Zeilen: N–Z</li>
-        <li>Schiffe sind automatisch gesetzt.</li>
-        <li>Abwechselnd schiessen.</li>
-        <li>Bei einem Treffer darf man nochmals schiessen.</li>
-        <li>Eingabe nur per Tastatur, Sprache oder Morse.</li>
-      </ul>
-    </section>
+      </section>
+    </main>
   </div>
 
   <script src="app.js"></script>
