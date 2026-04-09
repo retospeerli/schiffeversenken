@@ -88,28 +88,14 @@
     </div>
 
     <header class="topbar">
-      <div>
-        <h1>Schiffe versenken</h1>
-        <p class="subtitle">13×13 • Zeilen N–Z • Spalten A–M</p>
-      </div>
+      <h1>Schiffe versenken</h1>
       <button id="btnNewGame" class="btn primary">Neues Spiel</button>
     </header>
-
-    <section class="statusbar">
-      <div class="status-item"><strong>Status:</strong> <span id="statusText">Bereit.</span></div>
-      <div class="status-item"><strong>Am Zug:</strong> <span id="turnText">-</span></div>
-      <div class="status-item"><strong>Letzte Eingabe:</strong> <span id="lastInputText">-</span></div>
-    </section>
 
     <main class="game-layout">
       <section class="board-card">
         <h2>Dein Feld</h2>
-        <div class="legend">
-          <span><i class="lg ship"></i> Schiff</span>
-          <span><i class="lg hit"></i> Treffer</span>
-          <span><i class="lg miss"></i> Wasser</span>
-        </div>
-        <div class="board-wrap">
+        <div class="board-wrap board-wrap-fixed">
           <div class="board" id="playerBoardGrid"></div>
         </div>
       </section>
@@ -117,9 +103,6 @@
       <section class="board-card enemy-card">
         <div class="enemy-top">
           <h2>Gegnerfeld</h2>
-          <div class="legend">
-            <span>Eingabe nur über Tastatur, Sprache oder Morse</span>
-          </div>
         </div>
 
         <div class="input-box">
@@ -129,7 +112,6 @@
               <input id="coordInput" type="text" maxlength="2" placeholder="z. B. QB" autocomplete="off" />
               <button id="btnFireText" class="btn primary">Schiessen</button>
             </div>
-            <p class="mini">Erst Zeile N–Z, dann Spalte A–M.</p>
           </div>
 
           <div id="natoInputPanel" class="input-panel hidden">
@@ -142,7 +124,6 @@
               <div><strong>Erkannt:</strong> <span id="speechRaw">-</span></div>
               <div><strong>Koordinate:</strong> <span id="speechCoord">-</span></div>
             </div>
-            <p class="mini">Beispiel: Quebec Bravo</p>
           </div>
 
           <div id="morseInputPanel" class="input-panel hidden">
@@ -157,25 +138,10 @@
             <div class="input-row wrap mt8">
               <button id="btnClearMorse" class="btn">Zurücksetzen</button>
             </div>
-
-            <p class="mini">
-              Kurz drücken = Punkt · &nbsp;&nbsp; Lang drücken = Strich –<br>
-              Pause zwischen Zeichen, längere Pause zwischen Buchstaben.<br>
-              Nach zwei Buchstaben wird automatisch geschossen.
-            </p>
-
-            <details class="morse-help">
-              <summary>Morse-Hilfe A–Z</summary>
-              <div class="mini morse-grid">
-                A .- &nbsp; B -... &nbsp; C -.-. &nbsp; D -.. &nbsp; E . &nbsp; F ..-. &nbsp; G --. &nbsp; H .... &nbsp; I .. &nbsp; J .---<br>
-                K -.- &nbsp; L .-.. &nbsp; M -- &nbsp; N -. &nbsp; O --- &nbsp; P .--. &nbsp; Q --.- &nbsp; R .-. &nbsp; S ... &nbsp; T -<br>
-                U ..- &nbsp; V ...- &nbsp; W .-- &nbsp; X -..- &nbsp; Y -.-- &nbsp; Z --..
-              </div>
-            </details>
           </div>
         </div>
 
-        <div class="board-wrap">
+        <div class="board-wrap board-wrap-fixed">
           <div class="board" id="enemyBoardGrid"></div>
         </div>
       </section>
