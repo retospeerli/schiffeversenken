@@ -15,7 +15,7 @@
     charlie: "C",
     delta: "D",
     echo: "E",
-    foxtrot: "F",
+    foxtrot: "F", foxtrott: "F",
     golf: "G",
     hotel: "H",
     india: "I",
