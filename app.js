@@ -68,6 +68,8 @@
 
     btnNewGame: document.getElementById("btnNewGame"),
 
+    playerBoardStage: document.getElementById("playerBoardStage"),
+    enemyBoardStage: document.getElementById("enemyBoardStage"),
     playerBoardGrid: document.getElementById("playerBoardGrid"),
     enemyBoardGrid: document.getElementById("enemyBoardGrid"),
 
@@ -273,6 +275,28 @@
     return { board, ships };
   }
 
+  function updateBoardSize() {
+    const playerStage = dom.playerBoardStage;
+    const enemyStage = dom.enemyBoardStage;
+    if (!playerStage || !enemyStage) return;
+
+    const playerRect = playerStage.getBoundingClientRect();
+    const enemyRect = enemyStage.getBoundingClientRect();
+
+    const availableWidth = Math.min(playerRect.width, enemyRect.width);
+    const availableHeight = Math.min(playerRect.height, enemyRect.height);
+
+    const gapCompensation = 26;
+    const usableWidth = Math.max(100, availableWidth - gapCompensation);
+    const usableHeight = Math.max(100, availableHeight - gapCompensation);
+
+    const sizeByWidth = Math.floor(usableWidth / 14);
+    const sizeByHeight = Math.floor(usableHeight / 14);
+    const cellSize = Math.max(14, Math.min(sizeByWidth, sizeByHeight));
+
+    document.documentElement.style.setProperty("--cell-size", `${cellSize}px`);
+  }
+
   function resetState(mode = "pc", inputMode = "text", morseTrigger = { type: "keyboard", key: " " }) {
     const player = createPlacedBoard();
     const enemy = createPlacedBoard();
@@ -400,6 +424,7 @@
   }
 
   function renderBoards() {
+    updateBoardSize();
     renderBoard(dom.playerBoardGrid, state.playerBoard, true);
     renderBoard(dom.enemyBoardGrid, state.isOnline ? state.remoteBoardShots : state.enemyBoard, false);
   }
@@ -493,7 +518,7 @@
     await showEndOverlay(victory);
   }
 
-  async function resolvePlayerShotLocal(row, col, coordText) {
+  async function resolvePlayerShotLocal(row, col) {
     state.isBusy = true;
 
     const cell = state.enemyBoard[row][col];
@@ -517,16 +542,14 @@
       }
       await wait(TURN_SWITCH_DELAY_MS);
       state.myTurn = true;
+      state.isBusy = false;
     } else {
       await playMissSequence();
       await wait(TURN_SWITCH_DELAY_MS);
       state.myTurn = false;
       state.isBusy = false;
       window.setTimeout(pcTurn, 0);
-      return;
     }
-
-    state.isBusy = false;
   }
 
   function choosePcShot() {
@@ -585,9 +608,7 @@
 
     if (result.hit) {
       addPcTargets(row, col);
-      if (result.sunk) {
-        state.pcTargetStack = [];
-      }
+      if (result.sunk) state.pcTargetStack = [];
       await playHitSequence({ sunk: result.sunk, ownShipDestroyed: result.sunk });
       if (result.allSunk) {
         await finishGame(false);
@@ -596,7 +617,6 @@
       state.myTurn = false;
       state.isBusy = false;
       window.setTimeout(pcTurn, 0);
-      return;
     } else {
       await playMissSequence();
       await wait(TURN_SWITCH_DELAY_MS);
@@ -706,6 +726,7 @@
   }
 
   function resetMorseInput() {
+    if (!state) return;
     clearMorseTimers();
     state.morseCurrent = "";
     state.morseLetters = [];
@@ -1179,7 +1200,7 @@
       return;
     }
 
-    await resolvePlayerShotLocal(parsed.row, parsed.col, parsed.text);
+    await resolvePlayerShotLocal(parsed.row, parsed.col);
   }
 
   dom.startGameMode.addEventListener("change", showStartPanels);
@@ -1222,259 +1243,18 @@
   window.addEventListener("pointerup", onGlobalPointerUp);
   window.addEventListener("contextmenu", onContextMenu);
 
+  window.addEventListener("resize", () => {
+    updateBoardSize();
+    renderBoards();
+  });
+
+  window.addEventListener("load", () => {
+    updateBoardSize();
+    renderBoards();
+  });
+
   initSpeechRecognition();
   updateStartMorseKeyDisplay();
   resetState("pc", "text", pendingStartMorseTrigger);
   showStartPanels();
-
-  function initSpeechRecognition() {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      dom.speechRaw.textContent = "Spracherkennung wird in diesem Browser nicht unterstützt.";
-      dom.btnStartNato.disabled = true;
-      dom.btnStopNato.disabled = true;
-      return;
-    }
-
-    speechRecognition = new SR();
-    speechRecognition.lang = "de-CH";
-    speechRecognition.continuous = true;
-    speechRecognition.interimResults = true;
-    speechRecognition.maxAlternatives = 1;
-
-    speechRecognition.onstart = () => {
-      speechActive = true;
-      dom.speechRaw.textContent = "Aufnahme läuft …";
-      dom.speechCoord.textContent = "-";
-    };
-
-    speechRecognition.onresult = (event) => {
-      let finalTranscript = "";
-      let interim = "";
-
-      for (let i = 0; i < event.results.length; i++) {
-        const txt = event.results[i][0].transcript;
-        if (event.results[i].isFinal) finalTranscript += " " + txt;
-        else interim += " " + txt;
-      }
-
-      const full = (finalTranscript + " " + interim).trim();
-      dom.speechRaw.textContent = full || "-";
-
-      const parsed = parseNatoText(full);
-      if (parsed) {
-        dom.speechCoord.textContent = parsed.text;
-        try { speechRecognition.stop(); } catch (_) {}
-      } else {
-        dom.speechCoord.textContent = "-";
-      }
-    };
-
-    speechRecognition.onerror = () => {};
-
-    speechRecognition.onend = async () => {
-      speechActive = false;
-      const coord = dom.speechCoord.textContent;
-      if (coord && coord !== "-") {
-        await tryAutoFireFromString(coord);
-      } else if (dom.speechRaw.textContent && dom.speechRaw.textContent !== "-") {
-        await playPreShotFeedback(false);
-      }
-    };
-  }
-
-  function startNatoRecognition() {
-    if (!speechRecognition || speechActive || state.isBusy) return;
-    ensureAudioContext();
-    try {
-      dom.speechRaw.textContent = "-";
-      dom.speechCoord.textContent = "-";
-      speechRecognition.start();
-    } catch (_) {}
-  }
-
-  function stopNatoRecognition() {
-    if (!speechRecognition || !speechActive) return;
-    speechRecognition.stop();
-  }
-
-  function clearMorseTimers() {
-    if (morseLetterTimer) {
-      clearTimeout(morseLetterTimer);
-      morseLetterTimer = null;
-    }
-  }
-
-  function updateMorseDisplay() {
-    dom.morseCurrent.textContent = state?.morseCurrent || "-";
-    dom.morseLetters.textContent = state?.morseLetters?.length ? state.morseLetters.join(" ") : "-";
-    dom.morseCoord.textContent = state?.morseLetters?.length ? state.morseLetters.join("") : "-";
-  }
-
-  function resetMorseInput() {
-    if (!state) return;
-    clearMorseTimers();
-    state.morseCurrent = "";
-    state.morseLetters = [];
-    updateMorseDisplay();
-    stopMorseTone();
-  }
-
-  function scheduleMorseLetterCommit() {
-    clearMorseTimers();
-    morseLetterTimer = window.setTimeout(() => {
-      commitCurrentMorseLetterFromPause();
-    }, MORSE_LETTER_GAP_MS);
-  }
-
-  function registerMorseSymbol(durationMs) {
-    if (!state || state.inputMode !== "morse" || state.gameOver || state.isBusy) return;
-    const symbol = durationMs >= MORSE_LONG_PRESS_MS ? "-" : ".";
-    state.morseCurrent += symbol;
-    updateMorseDisplay();
-    scheduleMorseLetterCommit();
-  }
-
-  async function commitCurrentMorseLetterFromPause() {
-    if (!state.morseCurrent) return;
-
-    const letter = MORSE_TO_LETTER[state.morseCurrent];
-    state.morseCurrent = "";
-
-    if (!letter) {
-      updateMorseDisplay();
-      await playPreShotFeedback(false);
-      resetMorseInput();
-      return;
-    }
-
-    const pos = state.morseLetters.length;
-
-    if (pos === 0 && !isValidRowLetter(letter)) {
-      updateMorseDisplay();
-      await playPreShotFeedback(false);
-      resetMorseInput();
-      return;
-    }
-
-    if (pos === 1 && !isValidColLetter(letter)) {
-      updateMorseDisplay();
-      await playPreShotFeedback(false);
-      resetMorseInput();
-      return;
-    }
-
-    state.morseLetters.push(letter);
-    updateMorseDisplay();
-
-    if (state.morseLetters.length === 2) {
-      const coord = state.morseLetters.join("");
-      setTimeout(async () => {
-        await tryAutoFireFromString(coord);
-        resetMorseInput();
-      }, 50);
-    }
-  }
-
-  function activeElementIsTypingField() {
-    const el = document.activeElement;
-    if (!el) return false;
-    const tag = el.tagName;
-    return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
-  }
-
-  function triggerMatchesKeyboardEvent(trigger, e) {
-    return trigger && trigger.type === "keyboard" && e.key === trigger.key;
-  }
-
-  function onGlobalKeyDown(e) {
-    if (waitingForStartMorseKey) {
-      e.preventDefault();
-      pendingStartMorseTrigger = { type: "keyboard", key: e.key };
-      waitingForStartMorseKey = false;
-      updateStartMorseKeyDisplay();
-      return;
-    }
-
-    if (!state || state.inputMode !== "morse" || state.gameOver || state.isBusy) return;
-    if (activeElementIsTypingField()) return;
-
-    if (triggerMatchesKeyboardEvent(state.morseTrigger, e) && morsePressStart === null) {
-      e.preventDefault();
-      clearMorseTimers();
-      morsePressStart = performance.now();
-      startMorseTone();
-    }
-  }
-
-  function onGlobalKeyUp(e) {
-    if (!state || state.inputMode !== "morse" || state.gameOver || state.isBusy) return;
-
-    if (triggerMatchesKeyboardEvent(state.morseTrigger, e) && morsePressStart !== null) {
-      e.preventDefault();
-      const duration = performance.now() - morsePressStart;
-      morsePressStart = null;
-      stopMorseTone();
-      registerMorseSymbol(duration);
-    }
-  }
-
-  function onGlobalPointerDown(e) {
-    if (waitingForStartMorseKey) {
-      if (e.button === 0) {
-        pendingStartMorseTrigger = { type: "mouse-left" };
-        waitingForStartMorseKey = false;
-        updateStartMorseKeyDisplay();
-        return;
-      }
-      if (e.button === 2) {
-        pendingStartMorseTrigger = { type: "mouse-right" };
-        waitingForStartMorseKey = false;
-        updateStartMorseKeyDisplay();
-        return;
-      }
-    }
-
-    if (!state || state.inputMode !== "morse" || state.gameOver || state.isBusy) return;
-
-    if (state.morseTrigger.type === "mouse-left" && e.button === 0 && morsePressStart === null) {
-      clearMorseTimers();
-      morsePointerId = e.pointerId;
-      morsePressStart = performance.now();
-      startMorseTone();
-    }
-
-    if (state.morseTrigger.type === "mouse-right" && e.button === 2 && !morseRightMouseDown) {
-      clearMorseTimers();
-      morseRightMouseDown = true;
-      morsePressStart = performance.now();
-      startMorseTone();
-    }
-  }
-
-  function onGlobalPointerUp(e) {
-    if (!state || state.inputMode !== "morse" || state.gameOver || state.isBusy) return;
-
-    if (state.morseTrigger.type === "mouse-left" && e.button === 0 && morsePressStart !== null && morsePointerId === e.pointerId) {
-      const duration = performance.now() - morsePressStart;
-      morsePressStart = null;
-      morsePointerId = null;
-      stopMorseTone();
-      registerMorseSymbol(duration);
-    }
-
-    if (state.morseTrigger.type === "mouse-right" && e.button === 2 && morsePressStart !== null && morseRightMouseDown) {
-      const duration = performance.now() - morsePressStart;
-      morsePressStart = null;
-      morseRightMouseDown = false;
-      stopMorseTone();
-      registerMorseSymbol(duration);
-    }
-  }
-
-  function onContextMenu(e) {
-    if (waitingForStartMorseKey || (state && state.inputMode === "morse" && state.morseTrigger.type === "mouse-right")) {
-      e.preventDefault();
-    }
-  }
 })();
