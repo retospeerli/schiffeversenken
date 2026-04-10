@@ -123,18 +123,16 @@
     </header>
 
     <main class="game-layout">
-      <section class="board-card">
-        <h2>Dein Feld</h2>
-        <div class="board-wrap board-wrap-fixed">
-          <div class="board" id="playerBoardGrid"></div>
+      <section class="side side-left">
+        <div class="board-card">
+          <h2>Dein Feld</h2>
+          <div class="board-stage" id="playerBoardStage">
+            <div class="board" id="playerBoardGrid"></div>
+          </div>
         </div>
       </section>
 
-      <section class="board-card enemy-card">
-        <div class="enemy-top">
-          <h2>Gegnerfeld</h2>
-        </div>
-
+      <section class="side side-right">
         <div class="input-box">
           <div id="textInputPanel" class="input-panel">
             <label class="label" for="coordInput">Koordinate eingeben</label>
@@ -171,8 +169,11 @@
           </div>
         </div>
 
-        <div class="board-wrap board-wrap-fixed">
-          <div class="board" id="enemyBoardGrid"></div>
+        <div class="board-card">
+          <h2>Gegnerfeld</h2>
+          <div class="board-stage" id="enemyBoardStage">
+            <div class="board" id="enemyBoardGrid"></div>
+          </div>
         </div>
       </section>
     </main>
