@@ -104,15 +104,15 @@
     ready: new Audio("audio/ready.wav"),
     copy: new Audio("audio/copy.wav"),
     fire: new Audio("audio/fire.wav"),
-    hit: new Audio("audio/hit.wav"),
+    hit: new Audio("audio/hit.mp3"),
     miss: new Audio("audio/miss.wav"),
     destroyed: new Audio("audio/destroyed.wav"),
     error: new Audio("audio/error.wav"),
     enemyradio: new Audio("audio/enemyradio.wav"),
     enemyfire: new Audio("audio/enemyfire.wav"),
     mayday: new Audio("audio/mayday.wav"),
-    victory: new Audio("audio/victory.wav"),
-    defeat: new Audio("audio/defeat.wav")
+    victory: new Audio("audio/victory.mp3"),
+    defeat: new Audio("audio/defeat.mp3")
   };
 
   for (const audio of Object.values(sounds)) {
