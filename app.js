@@ -6,8 +6,6 @@
 
   const MORSE_LONG_PRESS_MS = 260;
   const MORSE_LETTER_GAP_MS = 700;
-  const SHOT_DELAY_MS = 300;
-  const TURN_SWITCH_DELAY_MS = 1000;
   const END_OVERLAY_DELAY_MS = 700;
   const MORSE_BEEP_FREQ = 650;
 
@@ -34,8 +32,10 @@
     tango: "T",
     uniform: "U",
     victor: "V",
-    whiskey: "W", whisky: "W",
-    xray: "X", "x-ray": "X",
+    whiskey: "W",
+    whisky: "W",
+    xray: "X",
+    "x-ray": "X",
     yankee: "Y",
     zulu: "Z"
   };
@@ -101,6 +101,7 @@
   };
 
   const sounds = {
+    ready: new Audio("audio/ready.wav"),
     copy: new Audio("audio/copy.wav"),
     fire: new Audio("audio/fire.wav"),
     hit: new Audio("audio/hit.wav"),
@@ -108,6 +109,7 @@
     destroyed: new Audio("audio/destroyed.wav"),
     error: new Audio("audio/error.wav"),
     enemyradio: new Audio("audio/enemyradio.wav"),
+    enemyfire: new Audio("audio/enemyfire.wav"),
     mayday: new Audio("audio/mayday.wav"),
     victory: new Audio("audio/victory.wav"),
     defeat: new Audio("audio/defeat.wav")
@@ -130,6 +132,7 @@
   let audioCtx = null;
   let morseOscillator = null;
   let morseGain = null;
+  let audioQueue = Promise.resolve();
 
   let rtc = {
     pc: null,
@@ -139,6 +142,10 @@
   };
 
   let pendingStartMorseTrigger = { type: "keyboard", key: " " };
+
+  function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
 
   function ensureAudioContext() {
     if (!audioCtx) {
@@ -176,42 +183,103 @@
     morseGain = null;
   }
 
-  function playSound(name) {
-    const snd = sounds[name];
-    if (!snd) return Promise.resolve();
-    try {
-      snd.currentTime = 0;
-      const p = snd.play();
-      if (p && typeof p.then === "function") return p.catch(() => {});
-    } catch (_) {}
-    return Promise.resolve();
-  }
-
-  function wait(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  async function playPreShotFeedback(valid) {
-    await playSound(valid ? "copy" : "error");
-    await wait(SHOT_DELAY_MS);
-  }
-
-  async function playFire() {
-    await playSound("fire");
-  }
-
-  async function playHitSequence({ sunk = false, ownShipDestroyed = false } = {}) {
-    await playSound("hit");
-    if (sunk) {
-      await playSound("destroyed");
-      if (ownShipDestroyed) {
-        await playSound("mayday");
-      }
+  function stopAllManagedSounds() {
+    for (const snd of Object.values(sounds)) {
+      try {
+        snd.pause();
+        snd.currentTime = 0;
+      } catch (_) {}
     }
   }
 
-  async function playMissSequence() {
-    await playSound("miss");
+  function waitForAudioEnd(audio) {
+    return new Promise(resolve => {
+      let done = false;
+
+      function finish() {
+        if (done) return;
+        done = true;
+        audio.removeEventListener("ended", finish);
+        audio.removeEventListener("error", finish);
+        resolve();
+      }
+
+      audio.addEventListener("ended", finish, { once: true });
+      audio.addEventListener("error", finish, { once: true });
+
+      const playPromise = audio.play();
+      if (playPromise && typeof playPromise.then === "function") {
+        playPromise.catch(() => finish());
+      }
+
+      if (audio.duration === 0 && audio.readyState < 2) {
+        setTimeout(finish, 1500);
+      }
+    });
+  }
+
+  function enqueueSound(name, volume = 1) {
+    audioQueue = audioQueue.then(async () => {
+      const snd = sounds[name];
+      if (!snd) return;
+
+      stopMorseTone();
+
+      try {
+        snd.pause();
+        snd.currentTime = 0;
+        snd.volume = volume;
+      } catch (_) {}
+
+      await waitForAudioEnd(snd);
+    });
+
+    return audioQueue;
+  }
+
+  async function playReadySound() {
+    await enqueueSound("ready", 1);
+  }
+
+  async function playVictorySound() {
+    await enqueueSound("victory", 1);
+  }
+
+  async function playDefeatSound() {
+    await enqueueSound("defeat", 1);
+  }
+
+  async function playPlayerTurnSequence(result) {
+    if (!result.valid) {
+      await enqueueSound("error", 1);
+      return;
+    }
+
+    await enqueueSound("copy", 1);
+    await enqueueSound("fire", 1);
+
+    if (result.hit) {
+      await enqueueSound("hit", 0.45);
+      if (result.sunk) {
+        await enqueueSound("destroyed", 1);
+      }
+    } else {
+      await enqueueSound("miss", 0.45);
+    }
+  }
+
+  async function playEnemyTurnSequence(result) {
+    await enqueueSound("enemyradio", 1);
+    await enqueueSound("enemyfire", 1);
+
+    if (result.hit) {
+      await enqueueSound("hit", 1);
+      if (result.sunk) {
+        await enqueueSound("mayday", 1);
+      }
+    } else {
+      await enqueueSound("miss", 1);
+    }
   }
 
   function createEmptyBoard() {
@@ -271,7 +339,9 @@
   function createPlacedBoard() {
     const board = createEmptyBoard();
     const ships = [];
-    for (const len of SHIP_LENGTHS) placeShip(board, ships, len);
+    for (const len of SHIP_LENGTHS) {
+      placeShip(board, ships, len);
+    }
     return { board, ships };
   }
 
@@ -310,8 +380,6 @@
       myTurn: true,
       gameOver: false,
       isBusy: false,
-      startMode: mode,
-      startInputMode: inputMode,
 
       playerBoard: player.board,
       playerShips: player.ships,
@@ -375,10 +443,6 @@
     return { row, col, text: cleaned };
   }
 
-  function coordToString(row, col) {
-    return `${ROW_LABELS[row]}${COL_LABELS[col]}`;
-  }
-
   function isValidRowLetter(letter) {
     return ROW_LABELS.includes(letter);
   }
@@ -433,7 +497,9 @@
     target.innerHTML = "";
     target.appendChild(makeHead(""));
 
-    for (let c = 0; c < SIZE; c++) target.appendChild(makeHead(COL_LABELS[c]));
+    for (let c = 0; c < SIZE; c++) {
+      target.appendChild(makeHead(COL_LABELS[c]));
+    }
 
     for (let r = 0; r < SIZE; r++) {
       target.appendChild(makeHead(ROW_LABELS[r]));
@@ -441,7 +507,10 @@
         const cell = board[r][c];
         const el = document.createElement("div");
         el.className = "cell";
-        if (revealShips && cell.ship) el.classList.add("ship");
+
+        if (revealShips && cell.ship) {
+          el.classList.add("ship");
+        }
         if (cell.hit) {
           el.classList.add("hit");
           el.textContent = "X";
@@ -449,6 +518,7 @@
           el.classList.add("miss");
           el.textContent = "•";
         }
+
         target.appendChild(el);
       }
     }
@@ -509,7 +579,12 @@
     dom.victoryAnim.classList.toggle("hidden", !victory);
     dom.defeatAnim.classList.toggle("hidden", victory);
 
-    await playSound(victory ? "victory" : "defeat");
+    if (victory) {
+      await playVictorySound();
+    } else {
+      await playDefeatSound();
+    }
+
     dom.endOverlay.classList.remove("hidden");
   }
 
@@ -519,8 +594,6 @@
   }
 
   async function resolvePlayerShotLocal(row, col) {
-    state.isBusy = true;
-
     const cell = state.enemyBoard[row][col];
     let result;
 
@@ -530,22 +603,24 @@
       result = applyNewShot(state.enemyBoard, state.enemyShips, row, col);
     }
 
-    await playFire();
+    await playPlayerTurnSequence({
+      valid: true,
+      hit: result.hit,
+      sunk: result.sunk
+    });
 
     renderBoards();
 
     if (result.hit) {
-      await playHitSequence({ sunk: result.sunk, ownShipDestroyed: false });
       if (result.allSunk) {
         await finishGame(true);
         return;
       }
-      await wait(TURN_SWITCH_DELAY_MS);
+
       state.myTurn = true;
       state.isBusy = false;
+      await playReadySound();
     } else {
-      await playMissSequence();
-      await wait(TURN_SWITCH_DELAY_MS);
       state.myTurn = false;
       state.isBusy = false;
       window.setTimeout(pcTurn, 0);
@@ -590,12 +665,6 @@
     if (state.gameOver || state.isBusy) return;
 
     state.isBusy = true;
-    await wait(TURN_SWITCH_DELAY_MS);
-
-    if (state.gameOver) {
-      state.isBusy = false;
-      return;
-    }
 
     const shot = choosePcShot();
     const { row, col } = shot;
@@ -603,25 +672,31 @@
 
     const result = applyNewShot(state.playerBoard, state.playerShips, row, col);
 
-    await playSound("enemyradio");
+    await playEnemyTurnSequence({
+      hit: result.hit,
+      sunk: result.sunk
+    });
+
     renderBoards();
 
     if (result.hit) {
       addPcTargets(row, col);
-      if (result.sunk) state.pcTargetStack = [];
-      await playHitSequence({ sunk: result.sunk, ownShipDestroyed: result.sunk });
+      if (result.sunk) {
+        state.pcTargetStack = [];
+      }
+
       if (result.allSunk) {
         await finishGame(false);
         return;
       }
+
       state.myTurn = false;
       state.isBusy = false;
       window.setTimeout(pcTurn, 0);
     } else {
-      await playMissSequence();
-      await wait(TURN_SWITCH_DELAY_MS);
       state.myTurn = true;
       state.isBusy = false;
+      await playReadySound();
     }
   }
 
@@ -678,7 +753,9 @@
       const parsed = parseNatoText(full);
       if (parsed) {
         dom.speechCoord.textContent = parsed.text;
-        try { speechRecognition.stop(); } catch (_) {}
+        try {
+          speechRecognition.stop();
+        } catch (_) {}
       } else {
         dom.speechCoord.textContent = "-";
       }
@@ -692,7 +769,9 @@
       if (coord && coord !== "-") {
         await tryAutoFireFromString(coord);
       } else if (dom.speechRaw.textContent && dom.speechRaw.textContent !== "-") {
-        await playPreShotFeedback(false);
+        state.isBusy = true;
+        await playPlayerTurnSequence({ valid: false });
+        state.isBusy = false;
       }
     };
   }
@@ -757,7 +836,9 @@
 
     if (!letter) {
       updateMorseDisplay();
-      await playPreShotFeedback(false);
+      state.isBusy = true;
+      await playPlayerTurnSequence({ valid: false });
+      state.isBusy = false;
       resetMorseInput();
       return;
     }
@@ -766,14 +847,18 @@
 
     if (pos === 0 && !isValidRowLetter(letter)) {
       updateMorseDisplay();
-      await playPreShotFeedback(false);
+      state.isBusy = true;
+      await playPlayerTurnSequence({ valid: false });
+      state.isBusy = false;
       resetMorseInput();
       return;
     }
 
     if (pos === 1 && !isValidColLetter(letter)) {
       updateMorseDisplay();
-      await playPreShotFeedback(false);
+      state.isBusy = true;
+      await playPlayerTurnSequence({ valid: false });
+      state.isBusy = false;
       resetMorseInput();
       return;
     }
@@ -919,7 +1004,6 @@
     rtc.dc.onopen = () => {
       rtc.connected = true;
       state.onlineConnected = true;
-      sendOnlineMessage({ type: "hello", payload: { info: "ready" } });
     };
 
     rtc.dc.onclose = () => {
@@ -956,7 +1040,9 @@
 
       dom.offerBox.value = JSON.stringify(rtc.pc.localDescription);
     } catch (_) {
-      await playPreShotFeedback(false);
+      state.isBusy = true;
+      await playPlayerTurnSequence({ valid: false });
+      state.isBusy = false;
     }
   }
 
@@ -964,7 +1050,9 @@
     try {
       const raw = dom.offerInput.value.trim();
       if (!raw) {
-        await playPreShotFeedback(false);
+        state.isBusy = true;
+        await playPlayerTurnSequence({ valid: false });
+        state.isBusy = false;
         return;
       }
 
@@ -982,7 +1070,9 @@
 
       dom.answerBox.value = JSON.stringify(rtc.pc.localDescription);
     } catch (_) {
-      await playPreShotFeedback(false);
+      state.isBusy = true;
+      await playPlayerTurnSequence({ valid: false });
+      state.isBusy = false;
     }
   }
 
@@ -990,14 +1080,18 @@
     try {
       const raw = dom.answerInput.value.trim();
       if (!raw) {
-        await playPreShotFeedback(false);
+        state.isBusy = true;
+        await playPlayerTurnSequence({ valid: false });
+        state.isBusy = false;
         return;
       }
 
       const answer = JSON.parse(raw);
       await rtc.pc.setRemoteDescription(answer);
     } catch (_) {
-      await playPreShotFeedback(false);
+      state.isBusy = true;
+      await playPlayerTurnSequence({ valid: false });
+      state.isBusy = false;
     }
   }
 
@@ -1034,8 +1128,6 @@
     if (!msg || !msg.type) return;
 
     switch (msg.type) {
-      case "hello":
-        break;
       case "shot":
         receiveIncomingShot(msg.payload);
         break;
@@ -1052,7 +1144,6 @@
     if (state.gameOver || state.isBusy) return;
 
     state.isBusy = true;
-    await wait(TURN_SWITCH_DELAY_MS);
 
     const { row, col } = payload;
     const cell = state.playerBoard[row][col];
@@ -1070,19 +1161,18 @@
       result = applyNewShot(state.playerBoard, state.playerShips, row, col);
     }
 
-    await playSound("enemyradio");
-    renderBoards();
+    await playEnemyTurnSequence({
+      hit: result.hit,
+      sunk: result.sunk
+    });
 
-    if (result.hit) {
-      await playHitSequence({ sunk: result.sunk, ownShipDestroyed: result.sunk });
-    } else {
-      await playMissSequence();
-    }
+    renderBoards();
 
     sendOnlineMessage({
       type: "shotResult",
       payload: {
-        row, col,
+        row,
+        col,
         valid: true,
         hit: result.hit,
         sunk: result.sunk,
@@ -1096,44 +1186,55 @@
     }
 
     if (!result.hit) {
-      await wait(TURN_SWITCH_DELAY_MS);
       state.myTurn = true;
+      state.isBusy = false;
+      await playReadySound();
+    } else {
+      state.myTurn = false;
+      state.isBusy = false;
     }
-
-    state.isBusy = false;
   }
 
   async function applyRemoteShotResult(payload) {
     const { row, col, valid, hit, sunk, allSunk } = payload;
 
     if (!valid) {
-      await playPreShotFeedback(false);
+      state.isBusy = true;
+      await playPlayerTurnSequence({ valid: false });
+      state.isBusy = false;
       return;
     }
 
     state.isBusy = true;
-    await playFire();
 
     const remoteCell = state.remoteBoardShots[row][col];
     if (hit) {
       remoteCell.hit = true;
-      renderBoards();
-      await playHitSequence({ sunk, ownShipDestroyed: false });
-      state.myTurn = true;
     } else {
       remoteCell.miss = true;
-      renderBoards();
-      await playMissSequence();
-      await wait(TURN_SWITCH_DELAY_MS);
-      state.myTurn = false;
     }
+
+    await playPlayerTurnSequence({
+      valid: true,
+      hit,
+      sunk
+    });
+
+    renderBoards();
 
     if (allSunk) {
       await finishGame(true);
       return;
     }
 
-    state.isBusy = false;
+    if (hit) {
+      state.myTurn = true;
+      state.isBusy = false;
+      await playReadySound();
+    } else {
+      state.myTurn = false;
+      state.isBusy = false;
+    }
   }
 
   function showStartPanels() {
@@ -1152,9 +1253,17 @@
     if (inputMode === "morse" && !pendingStartMorseTrigger) return;
 
     ensureAudioContext();
+    stopAllManagedSounds();
+    audioQueue = Promise.resolve();
+
     resetState(mode, inputMode, pendingStartMorseTrigger);
+
     dom.startOverlay.classList.add("hidden");
     dom.endOverlay.classList.add("hidden");
+
+    if (mode === "pc") {
+      playReadySound();
+    }
 
     if (inputMode === "text") {
       setTimeout(() => dom.coordInput.focus(), 60);
@@ -1165,6 +1274,8 @@
     stopNatoRecognition();
     cleanupRTC();
     resetMorseInput();
+    stopAllManagedSounds();
+    audioQueue = Promise.resolve();
     dom.endOverlay.classList.add("hidden");
     dom.startOverlay.classList.remove("hidden");
     showStartPanels();
@@ -1174,28 +1285,33 @@
     const parsed = parseCoordString(coordString);
 
     if (!parsed) {
-      await playPreShotFeedback(false);
+      state.isBusy = true;
+      await playPlayerTurnSequence({ valid: false });
+      state.isBusy = false;
       return;
     }
 
     if (!canPlayerShootNow()) {
-      await playPreShotFeedback(false);
+      state.isBusy = true;
+      await playPlayerTurnSequence({ valid: false });
+      state.isBusy = false;
       return;
     }
 
     state.isBusy = true;
-    await playPreShotFeedback(true);
 
     if (state.isOnline) {
       if (!state.onlineConnected || !rtc.dc || rtc.dc.readyState !== "open") {
+        await playPlayerTurnSequence({ valid: false });
         state.isBusy = false;
-        await playPreShotFeedback(false);
         return;
       }
+
       sendOnlineMessage({
         type: "shot",
         payload: { row: parsed.row, col: parsed.col, coordText: parsed.text }
       });
+
       state.isBusy = false;
       return;
     }
