@@ -88,6 +88,38 @@
       </div>
     </div>
 
+    <div id="helpOverlay" class="overlay hidden">
+      <div class="modal">
+        <h1>Spielanleitung</h1>
+
+        <div class="card">
+          <p><strong>Was ist Schiffe versenken?</strong><br>
+          Du versuchst, die versteckten Schiffe deines Gegners zu finden und zu versenken.<br>
+          Die Schiffe werden automatisch platziert – du setzt sie <strong>nicht selbst</strong>.</p>
+
+          <p><strong>Koordinaten:</strong><br>
+          Zuerst die <strong>Zeile</strong>, dann die <strong>Spalte</strong> eingeben
+          (wie Breitengrad vor Längengrad).<br>
+          Beispiel: QB</p>
+
+          <p><strong>Spielregeln:</strong><br>
+          Nach jedem Schuss wird gewechselt.<br>
+          Bei einem <strong>Treffer</strong> darfst du nochmals schiessen.</p>
+
+          <p><strong>Eingabemodi:</strong><br>
+          Tastatur, Sprache (NATO-Alphabet) oder Morse.</p>
+
+          <p><strong>Morse:</strong><br>
+          Du kannst eine Taste wählen (Standard: Leertaste).<br>
+          Kurz drücken = Punkt, lang drücken = Strich.</p>
+        </div>
+
+        <div class="modal-actions center">
+          <button id="btnCloseHelp" class="btn primary">Verstanden</button>
+        </div>
+      </div>
+    </div>
+
     <div id="endOverlay" class="overlay hidden">
       <div class="modal end-modal">
         <div class="end-animation">
