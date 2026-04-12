@@ -58,6 +58,9 @@
     startMorseKeyDisplay: document.getElementById("startMorseKeyDisplay"),
     btnStartGame: document.getElementById("btnStartGame"),
 
+    helpOverlay: document.getElementById("helpOverlay"),
+    btnCloseHelp: document.getElementById("btnCloseHelp"),
+
     endOverlay: document.getElementById("endOverlay"),
     endTitle: document.getElementById("endTitle"),
     endText: document.getElementById("endText"),
@@ -1259,11 +1262,8 @@
     resetState(mode, inputMode, pendingStartMorseTrigger);
 
     dom.startOverlay.classList.add("hidden");
+    dom.helpOverlay?.classList.remove("hidden");
     dom.endOverlay.classList.add("hidden");
-
-    if (mode === "pc") {
-      playReadySound();
-    }
 
     if (inputMode === "text") {
       setTimeout(() => dom.coordInput.focus(), 60);
@@ -1276,6 +1276,7 @@
     resetMorseInput();
     stopAllManagedSounds();
     audioQueue = Promise.resolve();
+    dom.helpOverlay?.classList.add("hidden");
     dom.endOverlay.classList.add("hidden");
     dom.startOverlay.classList.remove("hidden");
     showStartPanels();
@@ -1325,13 +1326,23 @@
   dom.btnStartGame.addEventListener("click", startGameFromOverlay);
   dom.btnNewGame.addEventListener("click", reopenStartOverlay);
 
+  dom.btnCloseHelp?.addEventListener("click", async () => {
+    dom.helpOverlay.classList.add("hidden");
+
+    if (state.mode === "pc") {
+      await playReadySound();
+    }
+  });
+
   dom.btnPlayAgain.addEventListener("click", () => {
+    dom.helpOverlay?.classList.add("hidden");
     dom.endOverlay.classList.add("hidden");
     dom.startOverlay.classList.remove("hidden");
     showStartPanels();
   });
 
   dom.btnBackToMenu.addEventListener("click", () => {
+    dom.helpOverlay?.classList.add("hidden");
     dom.endOverlay.classList.add("hidden");
     dom.startOverlay.classList.remove("hidden");
     showStartPanels();
