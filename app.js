@@ -894,6 +894,7 @@
       e.preventDefault();
       pendingStartMorseTrigger = { type: "keyboard", key: e.key };
       waitingForStartMorseKey = false;
+      document.body.classList.remove("waiting-key");
       updateStartMorseKeyDisplay();
       return;
     }
@@ -926,12 +927,14 @@
       if (e.button === 0) {
         pendingStartMorseTrigger = { type: "mouse-left" };
         waitingForStartMorseKey = false;
+        document.body.classList.remove("waiting-key");
         updateStartMorseKeyDisplay();
         return;
       }
       if (e.button === 2) {
         pendingStartMorseTrigger = { type: "mouse-right" };
         waitingForStartMorseKey = false;
+        document.body.classList.remove("waiting-key");
         updateStartMorseKeyDisplay();
         return;
       }
@@ -1247,6 +1250,7 @@
 
   function beginChooseStartMorseKey() {
     waitingForStartMorseKey = true;
+    document.body.classList.add("waiting-key");
   }
 
   function startGameFromOverlay() {
@@ -1276,6 +1280,7 @@
     resetMorseInput();
     stopAllManagedSounds();
     audioQueue = Promise.resolve();
+    document.body.classList.remove("waiting-key");
     dom.helpOverlay?.classList.add("hidden");
     dom.endOverlay.classList.add("hidden");
     dom.startOverlay.classList.remove("hidden");
@@ -1335,6 +1340,7 @@
   });
 
   dom.btnPlayAgain.addEventListener("click", () => {
+    document.body.classList.remove("waiting-key");
     dom.helpOverlay?.classList.add("hidden");
     dom.endOverlay.classList.add("hidden");
     dom.startOverlay.classList.remove("hidden");
@@ -1342,6 +1348,7 @@
   });
 
   dom.btnBackToMenu.addEventListener("click", () => {
+    document.body.classList.remove("waiting-key");
     dom.helpOverlay?.classList.add("hidden");
     dom.endOverlay.classList.add("hidden");
     dom.startOverlay.classList.remove("hidden");
